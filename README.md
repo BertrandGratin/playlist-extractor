@@ -38,7 +38,7 @@ Sources gratuites, sans compte ni clé : Deezer (album, cover, date de sortie, l
 
 ## Publier une nouvelle version
 
-GitHub fabrique les versions Windows et Mac tout seul quand on crée un tag qui commence par `v` : onglet **Releases** > *Draft a new release* > *Choose a tag* > tape par ex. `v1.1.0` > *Publish release*. Quelques minutes plus tard, les zips apparaissent dans la release (suivi dans l'onglet **Actions**).
+Onglet **Actions** du dépôt > *Fabriquer l'appli* > *Run workflow* > tape un numéro de version (ex. `v1.1.0`) > *Run workflow*. Une dizaine de minutes plus tard, une nouvelle release apparaît avec les zips Windows et Mac.
 
 ## Si ça ne marche plus
 
