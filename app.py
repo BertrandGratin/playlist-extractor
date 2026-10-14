@@ -1,4 +1,4 @@
-"""Extracteur de playlist YouTube : liste le titre et le lien de chaque vidéo."""
+"""Playlist Extractor: lists the title and link of every video in a YouTube playlist, with music info."""
 import re
 import socket
 import sys
@@ -15,12 +15,12 @@ from enrich import enrich, session
 from updater import VERSION, update_if_needed
 
 app = Flask(__name__)
-# Dossier des fichiers fournis (différent quand l'appli est empaquetée par PyInstaller).
+# Folder holding the bundled files (different when the app is packaged by PyInstaller).
 BASE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 
 
 def free_port(preferred=8765):
-    """Port libre (le 5000 est pris par AirPlay sur Mac)."""
+    """A free port (5000 is taken by AirPlay on Macs)."""
     for port in (preferred, 0):
         with socket.socket() as s:
             try:
@@ -39,15 +39,15 @@ def index():
 def playlist():
     url = (request.get_json(silent=True) or {}).get("url", "").strip()
     if not url:
-        return jsonify(error="Colle un lien de playlist YouTube."), 400
+        return jsonify(error="Paste a YouTube playlist link."), 400
 
     opts = {"extract_flat": "in_playlist", "quiet": True, "skip_download": True, "noplaylist": False}
     try:
         with YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-    except Exception as exc:  # yt-dlp lève des erreurs variées
+    except Exception as exc:  # yt-dlp raises many kinds of errors
         msg = str(exc).replace("ERROR: ", "")
-        return jsonify(error=f"Impossible de lire cette playlist : {msg}"), 400
+        return jsonify(error=f"Couldn't read this playlist: {msg}"), 400
 
     entries = info.get("entries") or []
     videos = []
@@ -55,7 +55,7 @@ def playlist():
         if not e:
             continue
         vid = e.get("id")
-        title = e.get("title") or "(sans titre)"
+        title = e.get("title") or "(untitled)"
         if title in ("[Private video]", "[Deleted video]"):
             continue
         videos.append({
@@ -66,9 +66,9 @@ def playlist():
         })
 
     if not videos and info.get("id") and not entries:
-        return jsonify(error="Ce lien ne ressemble pas à une playlist."), 400
+        return jsonify(error="This link doesn't look like a playlist."), 400
 
-    # Images de la playlist (miniatures YouTube), de la plus grande à la plus petite, sans doublon de taille.
+    # Playlist images (YouTube thumbnails), largest first, one per size.
     thumbs, sizes = [], set()
     for t in sorted(info.get("thumbnails") or [], key=lambda t: -(t.get("width") or 0)):
         if t.get("url") and t.get("width") not in sizes:
@@ -100,16 +100,16 @@ IMAGE_HOSTS = ("dzcdn.net", "deezer.com", "theaudiodb.com", "wikimedia.org", "co
 
 @app.get("/api/image")
 def image():
-    """Télécharge une image (cover, photo d'artiste) avec un nom de fichier propre."""
+    """Downloads an image (cover, artist photo) with a clean file name."""
     url = request.args.get("url", "")
     host = urlparse(url).hostname or ""
     if not any(host == h or host.endswith("." + h) for h in IMAGE_HOSTS):
-        return "Hôte non autorisé", 400
+        return "Host not allowed", 400
     try:
         r = session.get(url, timeout=20)
         r.raise_for_status()
     except requests.RequestException as exc:
-        return f"Téléchargement impossible : {exc}", 502
+        return f"Download failed: {exc}", 502
     ctype = r.headers.get("Content-Type", "image/jpeg").split(";")[0]
     ext = {"image/png": "png", "image/webp": "webp", "image/gif": "gif"}.get(ctype, "jpg")
     name = re.sub(r'[\\/:*?"<>|]+', "_", request.args.get("name") or "image").strip() or "image"
@@ -122,6 +122,6 @@ if __name__ == "__main__":
     update_if_needed()
     PORT = free_port()
     threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
-    print(f"\n  Extracteur de playlist {VERSION} lancé sur http://127.0.0.1:{PORT}")
-    print("  Laisse cette fenêtre ouverte pendant que tu utilises l'appli ; ferme-la pour arrêter.\n")
+    print(f"\n  Playlist Extractor {VERSION} running at http://127.0.0.1:{PORT}")
+    print("  Keep this window open while you use the app; close it to quit.\n")
     app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)

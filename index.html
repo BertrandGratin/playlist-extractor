@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Extracteur de playlist</title>
+<title>Playlist Extractor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -55,7 +55,7 @@
   .ghost.sm { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
   .muted { color: var(--muted); }
 
-  /* En-tête de la playlist */
+  /* Playlist header */
   .pl { display: grid; grid-template-columns: auto 1fr; gap: 20px; background: var(--panel);
         border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
   .pl-imgs { display: flex; flex-direction: column; gap: 8px; }
@@ -83,7 +83,7 @@
            border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
   .empty { color: var(--muted); font-size: 13px; }
 
-  /* Artistes */
+  /* Artists */
   .artists-list { display: flex; flex-direction: column; gap: 12px; }
   .acard { display: grid; grid-template-columns: 140px 1fr; gap: 18px; background: var(--panel);
            border: 1px solid var(--border); border-radius: 16px; padding: 16px; scroll-margin-top: 20px; }
@@ -131,7 +131,7 @@
   .alb-title { font-weight: 600; font-size: 14px; line-height: 1.3; }
   .alb-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
 
-  /* Morceaux */
+  /* Tracks */
   .list { display: flex; flex-direction: column; gap: 6px; }
   .row { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start;
          background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
@@ -153,6 +153,8 @@
           padding: 1px 9px; font-size: 12px; }
   .jump:hover { border-color: var(--accent); }
   .jump.alb-j { border-radius: 8px; color: #c9c9d6; }
+  .tag { border: 1px solid var(--border); border-radius: 8px; padding: 1px 8px; font-size: 12px;
+         color: #c9c9d6; background: rgba(255,255,255,.03); }
 
   .foot { text-align: center; color: #55556a; font-size: 12px; padding: 0 0 24px; }
   .foot a { color: inherit; }
@@ -181,15 +183,15 @@
       <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm14-4v8.2a3 3 0 1 0 2 2.8V12h3v-2z"/></svg>
     </div>
     <div>
-      <h1>Extracteur de playlist</h1>
-      <p class="sub">Colle un lien de playlist YouTube : titres, liens, artistes, albums, covers, labels et genres.</p>
+      <h1>Playlist Extractor</h1>
+      <p class="sub">Paste a YouTube playlist link: titles, links, artists, albums, covers, labels, genres, BPM and key.</p>
     </div>
   </header>
 
   <form id="form">
     <input id="url" type="url" required autocomplete="off"
            placeholder="https://www.youtube.com/playlist?list=...">
-    <button class="primary" id="go" type="submit">Extraire</button>
+    <button class="primary" id="go" type="submit">Extract</button>
   </form>
   <div class="error" id="error"></div>
 
@@ -200,9 +202,9 @@
         <p class="pl-title" id="plTitle"></p>
         <div class="count" id="count"></div>
         <div class="actions">
-          <button class="ghost" id="copyTitles">Copier tous les titres</button>
-          <button class="ghost" id="copyLinks">Copier tous les liens</button>
-          <button class="ghost" id="csv">Exporter tout (.csv)</button>
+          <button class="ghost" id="copyTitles">Copy all titles</button>
+          <button class="ghost" id="copyLinks">Copy all links</button>
+          <button class="ghost" id="csv">Export all (.csv)</button>
         </div>
         <div class="progress"><div id="bar"></div></div>
         <div class="progress-label" id="barLabel"></div>
@@ -210,29 +212,29 @@
     </div>
 
     <details class="sec" open>
-      <summary>Artistes <span class="badge" id="nArtists">0</span></summary>
-      <div class="artists-list" id="artists"><div class="empty">Recherche en cours…</div></div>
+      <summary>Artists <span class="badge" id="nArtists">0</span></summary>
+      <div class="artists-list" id="artists"><div class="empty">Searching…</div></div>
     </details>
 
     <details class="sec" open>
       <summary>Albums <span class="badge" id="nAlbums">0</span></summary>
-      <div class="albums" id="albums"><div class="empty">Recherche en cours…</div></div>
+      <div class="albums" id="albums"><div class="empty">Searching…</div></div>
     </details>
 
     <details class="sec" open>
-      <summary>Morceaux <span class="badge" id="nTracks">0</span></summary>
+      <summary>Tracks <span class="badge" id="nTracks">0</span></summary>
       <div class="list" id="list"></div>
     </details>
   </section>
 </div>
-<div class="toast" id="toast">Copié !</div>
+<div class="toast" id="toast">Copied!</div>
 <footer class="foot" id="foot"></footer>
 
 <script>
 const $ = id => document.getElementById(id);
 let data = null, runId = 0;
-let artists = new Map(), albums = new Map();   // infos regroupées, par nom d'artiste / par album
-const regionFr = (() => { try { return new Intl.DisplayNames(["fr"], { type: "region" }); } catch { return null; } })();
+let artists = new Map(), albums = new Map();   // info grouped by artist name / by album
+const regionNames = (() => { try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; } })();
 const ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 
@@ -243,7 +245,7 @@ async function copy(text) {
     ta.value = text; document.body.appendChild(ta); ta.select();
     document.execCommand("copy"); ta.remove();
   }
-  toast("Copié !");
+  toast("Copied!");
 }
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.classList.add("show");
@@ -254,26 +256,26 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s ?? 
 const fileSafe = s => (s || "image").replace(/[\\/:*?"<>|]/g, "_");
 const dl = (url, name) => `/api/image?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileSafe(name))}`;
 const slug = s => "k" + [...(s || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
-const plural = (n, w) => `${n} ${w}${n > 1 ? (w.endsWith("eau") ? "x" : "s") : ""}`;
+const plural = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`;
 
 function flag(cc) {
   if (!cc || cc.length !== 2) return "";
   return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
 }
 function countryName(a, withFlag = true) {
-  if (a.country) return `${withFlag ? flag(a.country) + " " : ""}${regionFr?.of(a.country) || a.country}`;
+  if (a.country) return `${withFlag ? flag(a.country) + " " : ""}${regionNames?.of(a.country) || a.country}`;
   return a.country_label || "";
 }
-function frDate(d) {
+function fmtDate(d) {
   if (!d || d.startsWith("0000")) return "";
   const [y, m, j] = d.split("-");
-  return m && j ? new Date(+y, m - 1, +j).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : y;
+  return m && j ? new Date(+y, m - 1, +j).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" }) : y;
 }
 
-/* ---------- En-tête playlist ---------- */
+/* ---------- Playlist header ---------- */
 function renderPlaylist() {
   $("plTitle").textContent = data.title;
-  $("count").textContent = [plural(data.count, "vidéo"), data.owner && `par ${data.owner}`].filter(Boolean).join(" · ");
+  $("count").textContent = [plural(data.count, "video"), data.owner && `by ${data.owner}`].filter(Boolean).join(" · ");
   const th = data.thumbnails || [];
   $("plImgs").innerHTML = th.length ? `
     <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="">
@@ -288,7 +290,7 @@ $("plImgs").addEventListener("click", e => {
   $("plImgs").querySelectorAll(".pl-thumbs img").forEach(x => x.classList.toggle("on", x === im));
 });
 
-/* ---------- Morceaux ---------- */
+/* ---------- Tracks ---------- */
 function renderTracks() {
   $("nTracks").textContent = data.count;
   $("list").innerHTML = data.videos.map((v, i) => `
@@ -296,22 +298,24 @@ function renderTracks() {
       <div class="num">${i + 1}</div>
       <div class="meta">
         <div class="line"><div class="title" title="${esc(v.title)}">${esc(v.title)}</div>
-          <button class="ic" data-copy="title" data-i="${i}" title="Copier le titre">${ICON}</button></div>
+          <button class="ic" data-copy="title" data-i="${i}" title="Copy title">${ICON}</button></div>
         <div class="line"><a class="link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a>
-          <button class="ic" data-copy="url" data-i="${i}" title="Copier le lien">${ICON}</button></div>
-        <div class="info"><span class="muted">Recherche des infos…</span></div>
+          <button class="ic" data-copy="url" data-i="${i}" title="Copy link">${ICON}</button></div>
+        <div class="info"><span class="muted">Looking up info…</span></div>
       </div>
     </div>`).join("");
 }
 function renderTrackInfo(i) {
   const e = data.videos[i].meta, info = $("row" + i).querySelector(".info");
-  if (!e?.found) { info.innerHTML = `<span class="muted">Infos introuvables pour ce morceau.</span>`; return; }
+  if (!e?.found) { info.innerHTML = `<span class="muted">No info found for this track.</span>`; return; }
   const year = (e.release_date || "").slice(0, 4);
   info.innerHTML = e.artists.map(a => `<button class="jump" data-jump="${slug("a" + a.name)}">${esc(a.name)}</button>`).join("")
-    + (e.album ? `<button class="jump alb-j" data-jump="${albumKey(e)}">💿 ${esc(e.album)}${year && year !== "0000" ? ` · ${year}` : ""}</button>` : "");
+    + (e.album ? `<button class="jump alb-j" data-jump="${albumKey(e)}">💿 ${esc(e.album)}${year && year !== "0000" ? ` · ${year}` : ""}</button>` : "")
+    + (e.bpm ? `<span class="tag" title="BPM: ${esc(e.bpm_source || "")}">🥁 ${e.bpm} BPM</span>` : "")
+    + (e.key ? `<span class="tag" title="Key estimated from the audio preview · Camelot ${esc(e.camelot || "")}">🎹 ${esc(e.key)}${e.camelot ? ` <span class="muted">(${esc(e.camelot)})</span>` : ""}</span>` : "");
 }
 
-/* ---------- Artistes (une fiche par artiste) ---------- */
+/* ---------- Artists (one card per artist) ---------- */
 function addArtist(a, trackIdx) {
   const key = slug("a" + a.name);
   let entry = artists.get(key);
@@ -338,12 +342,12 @@ function drawArtist(a) {
       <p class="a-name">${esc(a.name)}</p>
       <div class="a-meta">
         ${countryName(a) ? `<span>${esc(countryName(a))}</span>` : ""}
-        <span class="muted">${plural(a.tracks.size, "morceau")} dans la playlist</span>
+        <span class="muted">${plural(a.tracks.size, "track")} in the playlist</span>
       </div>
       ${genres.length ? `<div class="chips">${genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
       ${d ? `<div class="desc ${a.open ? "open" : ""}">${esc(d.text)}</div>` : ""}
       <div class="desc-bar">
-        ${d ? `<button class="more" data-more="${a.key}">${a.open ? "Réduire" : "Lire la suite"}</button>` : `<span class="muted">Pas de description trouvée.</span>`}
+        ${d ? `<button class="more" data-more="${a.key}">${a.open ? "Show less" : "Read more"}</button>` : `<span class="muted">No description found.</span>`}
         ${(a.descriptions || []).length > 1 ? a.descriptions.map((x, k) =>
           `<button class="tab ${k === a.desc ? "on" : ""}" data-desc="${a.key}" data-k="${k}">${esc(x.source)}</button>`).join("") : d ? `<span class="muted">· ${esc(d.source)}</span>` : ""}
         <span class="links">${links.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`).join("")}</span>
@@ -352,8 +356,8 @@ function drawArtist(a) {
     ${imgs.length ? `<div class="strip">${imgs.map((im, k) => `
       <div class="shot ${k === a.img ? "on" : ""}" title="${esc(im.source)}">
         <img src="${esc(im.url)}" data-pick="${a.key}" data-k="${k}" loading="lazy" alt="" onerror="this.closest('.shot').remove()">
-        <a class="zoom" href="${esc(im.url)}" target="_blank" rel="noopener" title="Voir en grand">⤢</a>
-        <a href="${dl(im.url, `${a.name} ${k + 1}`)}" title="Télécharger">⬇</a>
+        <a class="zoom" href="${esc(im.url)}" target="_blank" rel="noopener" title="View full size">⤢</a>
+        <a href="${dl(im.url, `${a.name} ${k + 1}`)}" title="Download">⬇</a>
         <div class="src">${esc(im.source)}</div>
       </div>`).join("")}</div>` : ""}`;
 }
@@ -366,7 +370,7 @@ $("artists").addEventListener("click", e => {
   drawArtist(a);
 });
 
-/* ---------- Albums (une fiche par album) ---------- */
+/* ---------- Albums (one card per album) ---------- */
 const albumKey = e => slug("b" + (e.album_id || `${e.album_artist}|${e.album}`));
 function addAlbum(e, trackIdx) {
   if (!e.album) return;
@@ -385,17 +389,17 @@ function addAlbum(e, trackIdx) {
   const types = { album: "Album", single: "Single", ep: "EP", compile: "Compilation" };
   $(key).innerHTML = `
     <div class="alb-cover">
-      ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy"><a href="${dl(entry.cover, `${entry.artist} - ${entry.title}`)}" title="Télécharger la cover">⬇ Cover</a>` : `<img alt="">`}
+      ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy"><a href="${dl(entry.cover, `${entry.artist} - ${entry.title}`)}" title="Download the cover">⬇ Cover</a>` : `<img alt="">`}
     </div>
     <div class="alb-title">${esc(entry.title)}</div>
     <div class="alb-sub">
       ${esc(entry.artist || "")}${entry.type ? ` · ${esc(types[entry.type] || entry.type)}` : ""}<br>
-      ${entry.date ? `📅 ${esc(frDate(entry.date))}<br>` : ""}
+      ${entry.date ? `📅 ${esc(fmtDate(entry.date))}<br>` : ""}
       ${entry.label ? `🏷️ ${esc(entry.label)}<br>` : ""}
-      <span>${plural(entry.tracks.size, "morceau")} dans la playlist</span>
+      <span>${plural(entry.tracks.size, "track")} in the playlist</span>
     </div>
     ${entry.genres.length ? `<div class="chips" style="margin-top:2px">${entry.genres.map(g =>
-      `<span class="chip" title="Source : ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
+      `<span class="chip" title="Source: ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
 }
 
 /* ---------- Chargement progressif ---------- */
@@ -404,7 +408,7 @@ async function enrichAll(id) {
   const total = data.videos.length;
   const progress = () => {
     $("bar").style.width = `${(done / total) * 100}%`;
-    $("barLabel").textContent = done < total ? `Recherche des infos : ${done} / ${total} morceaux…` : "Toutes les infos sont chargées.";
+    $("barLabel").textContent = done < total ? `Looking up info: ${done} / ${total} tracks…` : "All info loaded.";
   };
   progress();
   async function worker() {
@@ -426,8 +430,8 @@ async function enrichAll(id) {
   }
   await Promise.all([1, 2, 3, 4].map(worker));
   if (id === runId) {
-    if (!artists.size) $("artists").innerHTML = `<div class="empty">Aucun artiste trouvé.</div>`;
-    if (!albums.size) $("albums").innerHTML = `<div class="empty">Aucun album trouvé.</div>`;
+    if (!artists.size) $("artists").innerHTML = `<div class="empty">No artists found.</div>`;
+    if (!albums.size) $("albums").innerHTML = `<div class="empty">No albums found.</div>`;
   }
 }
 
@@ -460,19 +464,19 @@ function save(text, name, type) {
 $("csv").onclick = () => {
   if (!data) return;
   const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
-  const head = ["Titre YouTube", "Lien", "Artistes", "Pays", "Morceau", "Album", "Date de sortie", "Label", "Genres", "Cover", "Photos artiste"];
+  const head = ["YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "Key", "Camelot", "Cover", "Artist photos"];
   const rows = data.videos.map(v => {
     const e = v.meta?.found ? v.meta : {};
     const ar = e.artists || [];
     return [v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
-            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.cover,
+            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.bpm, e.key, e.camelot, e.cover,
             ar.flatMap(a => (a.images || []).map(i => i.url)).join(" ")].map(q).join(";");
   });
   save("﻿" + [head.map(q).join(";"), ...rows].join("\r\n"), fileSafe(data.title || "playlist") + ".csv", "text/csv;charset=utf-8");
 };
 
 fetch("/api/version").then(r => r.json()).then(v => {
-  $("foot").innerHTML = `Extracteur de playlist ${esc(v.version)} · <a href="https://github.com/BertrandGratin/playlist-extractor/releases" target="_blank" rel="noopener">GitHub</a>`;
+  $("foot").innerHTML = `Playlist Extractor ${esc(v.version)} · <a href="https://github.com/BertrandGratin/playlist-extractor/releases" target="_blank" rel="noopener">GitHub</a>`;
 }).catch(() => {});
 
 $("form").onsubmit = async e => {
@@ -486,9 +490,9 @@ $("form").onsubmit = async e => {
       body: JSON.stringify({ url: $("url").value })
     });
     const j = await r.json();
-    if (!r.ok) throw new Error(j.error || "Erreur inconnue");
+    if (!r.ok) throw new Error(j.error || "Unknown error");
     data = j; artists = new Map(); albums = new Map();
-    $("artists").innerHTML = $("albums").innerHTML = `<div class="empty">Recherche en cours…</div>`;
+    $("artists").innerHTML = $("albums").innerHTML = `<div class="empty">Searching…</div>`;
     $("nArtists").textContent = $("nAlbums").textContent = "0";
     renderPlaylist(); renderTracks();
     $("results").style.display = "block";
@@ -497,7 +501,7 @@ $("form").onsubmit = async e => {
     $("error").textContent = err.message; $("error").style.display = "block";
     $("results").style.display = "none";
   } finally {
-    btn.disabled = false; btn.textContent = "Extraire";
+    btn.disabled = false; btn.textContent = "Extract";
   }
 };
 </script>

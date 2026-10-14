@@ -1,2 +1,2 @@
-# Remplacé automatiquement par le numéro de version lors de la fabrication sur GitHub.
+# Replaced automatically with the version number when the app is built on GitHub.
 VERSION = "dev"

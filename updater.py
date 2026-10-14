@@ -1,9 +1,8 @@
-"""Mise à jour automatique de l'appli empaquetée, depuis les releases GitHub.
+"""Automatic updates of the packaged app, from GitHub releases.
 
-Au lancement, l'appli compare sa version à la dernière release publiée. Si une version plus
-récente existe, elle télécharge le zip correspondant à l'ordinateur, remplace son propre
-fichier et se relance. En cas de problème (pas d'internet, GitHub indisponible…), elle démarre
-simplement la version actuelle.
+At launch, the app compares its version with the latest published release. If a newer one
+exists, it downloads the zip for this computer, replaces its own file and restarts. If anything
+goes wrong (no internet, GitHub unavailable…), it simply starts the current version.
 """
 import os
 import platform
@@ -31,14 +30,14 @@ def _parse(v):
 
 def _asset_name():
     if sys.platform == "win32":
-        return "Extracteur-Playlist-Windows.zip"
+        return "Playlist-Extractor-Windows.zip"
     if sys.platform == "darwin":
-        return "Extracteur-Playlist-Mac-AppleSilicon.zip" if platform.machine() == "arm64" else "Extracteur-Playlist-Mac-Intel.zip"
-    return "Extracteur-Playlist-Linux.zip"
+        return "Playlist-Extractor-Mac-AppleSilicon.zip" if platform.machine() == "arm64" else "Playlist-Extractor-Mac-Intel.zip"
+    return "Playlist-Extractor-Linux.zip"
 
 
 def _relaunch(exe):
-    # Demande à PyInstaller de repartir de zéro dans le nouveau processus.
+    # Tell PyInstaller to start from scratch in the new process.
     env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")
     if sys.platform == "win32":
         subprocess.Popen([exe], env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
@@ -47,7 +46,7 @@ def _relaunch(exe):
 
 
 def cleanup_old():
-    """Supprime l'ancien exécutable laissé par une mise à jour Windows précédente."""
+    """Deletes the old executable left behind by a previous Windows update."""
     old = Path(sys.executable + ".old")
     if old.exists():
         try:
@@ -57,7 +56,7 @@ def cleanup_old():
 
 
 def update_if_needed():
-    """Met l'appli à jour puis la relance si une nouvelle version existe. Ne fait rien depuis le code source."""
+    """Updates and restarts the app if a newer version exists. Does nothing when run from source."""
     if not getattr(sys, "frozen", False) or VERSION == "dev":
         return
     cleanup_old()
@@ -70,7 +69,7 @@ def update_if_needed():
         if not asset:
             return
 
-        print(f"\n  Nouvelle version {latest} disponible (tu as {VERSION}). Mise à jour en cours…", flush=True)
+        print(f"\n  New version {latest} available (you have {VERSION}). Updating…", flush=True)
         exe = Path(sys.executable)
         with tempfile.TemporaryDirectory() as tmp:
             zpath = Path(tmp) / "update.zip"
@@ -80,24 +79,24 @@ def update_if_needed():
                     for chunk in r.iter_content(1 << 20):
                         f.write(chunk)
             with zipfile.ZipFile(zpath) as z:
-                member = next(n for n in z.namelist() if Path(n).name.startswith("Extracteur-Playlist"))
+                member = next(n for n in z.namelist() if Path(n).name.startswith(("Playlist-Extractor", "Extracteur-Playlist")))
                 new = exe.with_name(exe.name + ".new")
                 with z.open(member) as src, open(new, "wb") as dst:
                     dst.write(src.read())
         os.chmod(new, 0o755)
         if sys.platform == "win32":
-            # Windows interdit d'écraser un .exe en cours d'exécution, mais autorise à le renommer.
+            # Windows won't let a running .exe be overwritten, but it can be renamed.
             os.replace(exe, str(exe) + ".old")
             try:
                 os.replace(new, exe)
             except OSError:
-                os.replace(str(exe) + ".old", exe)  # on remet l'ancienne version en place
+                os.replace(str(exe) + ".old", exe)  # put the old version back
                 raise
         else:
             os.replace(new, exe)
-        print(f"  Mise à jour vers {latest} terminée, redémarrage…\n", flush=True)
+        print(f"  Updated to {latest}, restarting…\n", flush=True)
         _relaunch(str(exe))
     except SystemExit:
         raise
-    except Exception as exc:  # pas d'internet, GitHub indisponible, droits insuffisants…
-        print(f"  (Vérification des mises à jour impossible : {exc})")
+    except Exception as exc:  # no internet, GitHub unavailable, missing permissions…
+        print(f"  (Couldn't check for updates: {exc})")

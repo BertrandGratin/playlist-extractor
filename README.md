@@ -1,58 +1,60 @@
-# Extracteur de playlist YouTube
+# Playlist Extractor
 
-Petite app locale : tu colles un lien de playlist YouTube, elle liste le titre et le lien de chaque vidéo, avec des boutons pour copier le titre ou le lien séparément (par morceau, ou tous d'un coup).
+A small app that runs on your own computer: paste a YouTube playlist link and it lists the title and link of every video, with one-click copy for each title or link (or all of them at once).
 
-Elle cherche aussi automatiquement les infos de chaque morceau, puis les regroupe en haut de la page pour éviter les répétitions :
+It also looks up the music info for every track and groups everything that repeats at the top of the page:
 
-- **Playlist** : ses images, son auteur et le nombre de vidéos.
-- **Artistes** : une fiche par artiste, avec toutes ses photos trouvées (Genius, Deezer, TheAudioDB, Wikimedia) pour choisir et télécharger celle que tu préfères, sa description (Genius, ou Wikipédia en secours), son pays d'origine, ses genres et le nombre de ses morceaux dans la playlist.
-- **Albums** : une fiche par album, avec la cover (téléchargeable), la date de sortie, le label et les genres.
-- **Morceaux** : titre et lien (copiables), avec des raccourcis vers la fiche de l'artiste et de l'album.
+- **Playlist**: its images, its owner and the number of videos.
+- **Artists**: one card per artist, with every photo found (Genius, Deezer, TheAudioDB, Wikimedia) so you can pick and download your favourite, their description (Genius, with Wikipedia as a complement or fallback), country of origin, genres, and how many of their tracks are in the playlist.
+- **Albums**: one card per album, with the cover (downloadable), release date, label and genres.
+- **Tracks**: title and link (copyable), BPM and key, with shortcuts to the artist and album cards.
 
-« Exporter tout (.csv) » sort tout ça dans un fichier qui s'ouvre dans Excel.
+"Export all (.csv)" puts everything in a file that opens in Excel.
 
-## Pour tes amis : l'appli toute prête
+## For your friends: the ready-made app
 
-Va dans la section **Releases** du dépôt GitHub (colonne de droite), télécharge le zip qui correspond à ton ordi, dézippe-le et double-clique sur `Extracteur-Playlist`. Rien à installer. Le premier lancement affiche un avertissement parce que l'appli n'est pas signée : la marche à suivre est écrite sur la page de la release.
+Go to the **Releases** section of the GitHub repository (right-hand column), download the zip for your computer, unzip it and double-click `Playlist-Extractor`. Nothing to install. The first launch shows a warning because the app isn't signed: how to get past it is explained on the release page.
 
-### Mises à jour automatiques
+### Automatic updates
 
-À chaque lancement, l'appli regarde sur GitHub s'il existe une version plus récente. Si oui, elle la télécharge, se remplace toute seule et redémarre (quelques secondes). Personne n'a besoin de retourner sur GitHub : il suffit que tu publies une nouvelle version. Sans internet, l'appli démarre simplement la version actuelle. Le numéro de version est affiché en bas de la page.
+Every time it starts, the app checks GitHub for a newer version. If there is one, it downloads it, replaces itself and restarts (a few seconds). Nobody needs to go back to GitHub: you just publish a new version. Without internet, the app simply starts the current version. The version number is shown at the bottom of the page.
 
-(Seule exception : les versions 1.0 et 1.1 n'avaient pas encore ce système, il faut les remplacer une dernière fois à la main par la 1.2.)
+## Running from the source code (for development)
 
-## Lancer depuis le code (pour développer)
+### Requirements
 
-### Prérequis
+Python 3.9 or newer ([python.org/downloads](https://www.python.org/downloads/)). On Windows, tick "Add python.exe to PATH" during installation.
 
-Python 3.9 ou plus récent ([python.org/downloads](https://www.python.org/downloads/)). Sous Windows, coche « Add python.exe to PATH » pendant l'installation.
+### Launching
 
-### Lancement
+- **Windows**: double-click `run-windows.bat`.
+- **Mac**: double-click `run-mac.command` (the first time: right-click > Open if macOS blocks the file).
 
-- **Windows** : double-clique sur `lancer-windows.bat`.
-- **Mac** : double-clique sur `lancer-mac.command` (la première fois : clic droit > Ouvrir si macOS bloque le fichier).
+The first launch installs the dependencies into a `.venv` folder, then the page opens by itself at http://127.0.0.1:8765. To quit, close the terminal window (or press Ctrl+C).
 
-Le premier lancement installe les dépendances (Flask et yt-dlp) dans un dossier `.venv`, puis la page s'ouvre toute seule sur http://127.0.0.1:8765. Pour arrêter, ferme la fenêtre du terminal (ou Ctrl+C).
+By hand, if you prefer: `pip install -r requirements.txt` then `python app.py`.
 
-À la main, si tu préfères : `pip install -r requirements.txt` puis `python app.py`.
+## How to use it
 
-## Utilisation
+1. Paste a playlist link (`https://www.youtube.com/playlist?list=...`, or a video link containing `&list=...`).
+2. Click **Extract**.
+3. The copy icon next to a title or link copies it; **Copy all titles** / **Copy all links** at the top copy the whole list.
+4. In an artist card, click a photo to feature it; on hover, ⤢ opens it full size and ⬇ downloads it.
 
-1. Colle un lien de playlist (`https://www.youtube.com/playlist?list=...`, ou un lien de vidéo contenant `&list=...`).
-2. Clique sur **Extraire**.
-3. L'icône copier à côté d'un titre ou d'un lien le copie, ou **Copier tous les titres** / **Copier tous les liens** en haut.
-4. Dans une fiche artiste, clique sur une photo pour la mettre en avant ; au survol, ⤢ l'ouvre en grand et ⬇ la télécharge.
+Private or deleted videos are skipped. The playlist must be public or unlisted.
 
-Les vidéos privées ou supprimées sont ignorées. La playlist doit être publique ou non répertoriée.
+## Where the info comes from
 
-## D'où viennent les infos
+Free sources, no account or API key: Genius (artist photos and description), Wikipedia (description), Deezer (album, cover, release date, label, genres, photo, BPM when known, 30-second audio preview), MusicBrainz (country of origin, album and artist genres), TheAudioDB (photos, genres and styles) and Wikimedia Commons (photos). Genres from every source are merged: those cited by several sources come first, and hovering over a genre shows where it came from.
 
-Sources gratuites, sans compte ni clé : Genius (photos et description de l'artiste), Wikipédia (description en secours), Deezer (album, cover, date de sortie, label, genres, photo), MusicBrainz (pays d'origine, genres de l'album et de l'artiste), TheAudioDB (photos, genres et styles) et Wikimedia Commons (photos). Les genres de toutes ces sources sont fusionnés : ceux cités par plusieurs sources apparaissent en premier, et survoler un genre montre d'où il vient. L'app devine l'artiste et le titre à partir du titre YouTube (« Artiste - Titre ») ou de la chaîne « Artiste - Topic » ; si le titre YouTube est trop fantaisiste, le morceau affiche « Infos introuvables ». Pour les longues playlists, les infos arrivent au fur et à mesure (MusicBrainz limite à une requête par seconde, compte quelques secondes par morceau).
+**BPM and key** are estimated by analysing the track's 30-second Deezer preview (Deezer's own BPM is used when it has one). The key is also shown in Camelot notation for DJs. These are estimates: the tempo can occasionally come out at half or double the real value, and a key can be confused with its relative major/minor.
 
-## Publier une nouvelle version
+The app guesses the artist and title from the YouTube title ("Artist - Title") or from an "Artist - Topic" channel; if the YouTube title is too unusual, the track shows "No info found". On long playlists the info arrives progressively (MusicBrainz allows one request per second, so allow a few seconds per track).
 
-Onglet **Actions** du dépôt > *Fabriquer l'appli* > *Run workflow* > tape un numéro de version (ex. `v1.1.0`) > *Run workflow*. Quelques minutes plus tard, une nouvelle release apparaît avec les zips Windows et Mac, et toutes les applis déjà installées se mettront à jour à leur prochain lancement. Le numéro doit être plus grand que le précédent (ex. `v1.2.0` → `v1.2.1` ou `v1.3.0`).
+## Publishing a new version
 
-## Si ça ne marche plus
+Repository's **Actions** tab > *Build the app* > *Run workflow* > enter a version number (e.g. `v1.4.0`) > *Run workflow*. A few minutes later a new release appears with the Windows and Mac zips, and every installed app updates itself at its next launch. The number must be higher than the previous one (e.g. `v1.3.0` → `v1.3.1` or `v1.4.0`).
 
-YouTube change régulièrement. Les scripts de lancement mettent yt-dlp à jour à chaque démarrage ; pour l'appli toute prête, il suffit de publier une nouvelle version (voir ci-dessus), qui embarquera le yt-dlp le plus récent.
+## If it stops working
+
+YouTube changes regularly. The launch scripts update yt-dlp at every start; for the ready-made app, just publish a new version (see above), which will bundle the latest yt-dlp.

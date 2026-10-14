@@ -1,11 +1,12 @@
-"""Enrichissement d'une vidéo : album, cover, artistes, date de sortie, label, pays, genres, images.
+"""Enriches a video with music info: album, cover, artists, release date, label, country, genres,
+images, BPM and key.
 
-Sources gratuites sans clé API :
-- Deezer        : morceau, album, cover, date de sortie, label, genres, photo d'artiste
-- MusicBrainz   : pays d'origine de l'artiste (+ genres de secours, lien Wikidata)
-- Genius        : photo et description de l'artiste (API publique du site, sans clé)
-- TheAudioDB    : photos supplémentaires de l'artiste (clé publique de test "123")
-- Wikidata / Wikipedia / Commons : photos et description en secours
+Free sources, no API key needed:
+- Deezer        : track, album, cover, release date, label, genres, artist photo, BPM, audio preview
+- MusicBrainz   : artist's country of origin, album and artist genres, Wikidata link
+- Genius        : artist photo and description (the website's public API, no key)
+- TheAudioDB    : more artist photos, genres and styles (public test key "123")
+- Wikidata / Wikipedia / Commons : more photos, fallback description
 """
 import re
 import threading
@@ -16,12 +17,15 @@ from urllib.parse import quote
 
 import requests
 
+from audio_analysis import analyse
+
 UA = "PlaylistExtractor/1.0 (projet perso local)"
 session = requests.Session()
 session.headers["User-Agent"] = UA
+session.headers["Accept-Language"] = "en"  # genres and labels in English
 TIMEOUT = 12
 
-# MusicBrainz impose 1 requête par seconde.
+# MusicBrainz allows 1 request per second.
 _mb_lock = threading.Lock()
 _mb_last = [0.0]
 
@@ -57,10 +61,10 @@ def _sim(a, b):
 
 
 def parse_title(title, channel=""):
-    """Devine (artiste, titre) depuis le titre YouTube et la chaîne."""
+    """Guesses (artist, title) from the YouTube title and channel name."""
     clean = NOISE.sub("", title).strip()
-    clean = re.sub(r"\s*\|.*$", "", clean).strip()  # « Titre | Album » etc.
-    if channel.endswith(" - Topic"):  # chaînes auto-générées « Artiste - Topic »
+    clean = re.sub(r"\s*\|.*$", "", clean).strip()  # "Title | Album" etc.
+    if channel.endswith(" - Topic"):  # auto-generated "Artist - Topic" channels
         return channel[:-8].strip(), clean
     parts = re.split(r"\s+[-–—]\s+", clean, maxsplit=1)
     if len(parts) == 2:
@@ -103,7 +107,7 @@ def deezer_track(track_id):
 
 
 def _pick_album(candidates):
-    """Parmi les meilleurs résultats, préfère l'album original (pas une compilation), le plus ancien."""
+    """Among the best matches, prefers the original album (not a compilation), the oldest one."""
     best = None
     for t in candidates[:3]:
         alb = deezer_album(t["album"]["id"])
@@ -123,7 +127,7 @@ def _commons_url(fname, width=1000):
 
 
 def _commons_category(category, limit=10):
-    """Photos d'une catégorie Wikimedia Commons (souvent plusieurs photos de concerts, portraits…)."""
+    """Photos from a Wikimedia Commons category (often several concert photos, portraits…)."""
     data = _get(
         "https://commons.wikimedia.org/w/api.php", action="query", format="json",
         generator="categorymembers", gcmtitle="Category:" + category, gcmtype="file", gcmlimit=30,
@@ -138,7 +142,7 @@ def _commons_category(category, limit=10):
 
 
 def _add_genres(bucket, names, source):
-    """Fusionne des genres de plusieurs sources ; un genre cité par plusieurs sources remonte en tête."""
+    """Merges genres from several sources; a genre cited by more sources ranks higher."""
     for n in names:
         n = (n or "").strip()
         if not n or len(n) > 40:
@@ -155,7 +159,7 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 
 def _get_browser(url, **params):
-    """Requête avec un en-tête de navigateur (Genius refuse les robots génériques)."""
+    """Request with a browser User-Agent (Genius rejects generic bots)."""
     try:
         r = session.get(url, params=params or None, timeout=TIMEOUT,
                         headers={"User-Agent": BROWSER_UA, "Accept": "application/json"})
@@ -167,7 +171,7 @@ def _get_browser(url, **params):
 
 
 def genius_artist(name):
-    """Photo(s), description et page Genius d'un artiste."""
+    """An artist's Genius photo(s), description and page."""
     data = _get_browser("https://genius.com/api/search/artist", q=name) or {}
     hits = []
     for section in (data.get("response") or {}).get("sections") or []:
@@ -196,7 +200,7 @@ def _mb_genres(entity):
 
 @lru_cache(maxsize=1024)
 def artist_info(name, deezer_picture=""):
-    """Pays d'origine, genres et toutes les photos trouvées d'un artiste."""
+    """An artist's country of origin, genres, descriptions and every photo found."""
     info = {"name": name, "country": None, "country_label": None, "images": [], "genres": [],
             "audiodb_genres": [], "descriptions": [], "links": {}}
     seen = set()
@@ -241,18 +245,18 @@ def artist_info(name, deezer_picture=""):
         if wikidata:
             ent = _get("https://www.wikidata.org/wiki/Special:EntityData/" + wikidata + ".json") or {}
             claims = ((ent.get("entities") or {}).get(wikidata) or {}).get("claims") or {}
-            for c in claims.get("P18", []):  # image principale
+            for c in claims.get("P18", []):  # main image
                 add_img(_commons_url(c["mainsnak"]["datavalue"]["value"]), "Wikimedia")
-            for c in claims.get("P373", [])[:1]:  # catégorie Commons : autres photos
+            for c in claims.get("P373", [])[:1]:  # Commons category: more photos
                 for url in _commons_category(c["mainsnak"]["datavalue"]["value"]):
                     add_img(url, "Wikimedia Commons")
             sitelinks = ((ent.get("entities") or {}).get(wikidata) or {}).get("sitelinks") or {}
-            for lang in ("fr", "en"):
+            for lang in ("en", "fr"):
                 title = (sitelinks.get(f"{lang}wiki") or {}).get("title")
                 summary = title and wikipedia_summary(title, lang)
                 if summary:
-                    info["descriptions"].append({"source": f"Wikipédia ({lang.upper()})", **summary})
-                    info["links"]["Wikipédia"] = info["links"].get("Wikipédia") or summary["url"]
+                    info["descriptions"].append({"source": f"Wikipedia ({lang.upper()})", **summary})
+                    info["links"]["Wikipedia"] = info["links"].get("Wikipedia") or summary["url"]
                     break
 
     artist_genres = {}
@@ -264,7 +268,7 @@ def artist_info(name, deezer_picture=""):
 
 @lru_cache(maxsize=2048)
 def mb_release_group_genres(artist, track, album_title):
-    """Genres MusicBrainz de l'album (release group) contenant ce morceau."""
+    """MusicBrainz genres of the album (release group) containing this track."""
     recs = (_mb("recording/", query=f'recording:"{track}" AND artist:"{artist}"', limit=10) or {}).get("recordings") or []
     best = None
     for r in recs:
@@ -284,6 +288,28 @@ def mb_release_group_genres(artist, track, album_title):
 def audiodb_track_genres(artist, track):
     t = ((_get("https://www.theaudiodb.com/api/v1/json/123/searchtrack.php", s=artist, t=track) or {}).get("track") or [None])[0]
     return [x for x in (t.get("strGenre"), t.get("strStyle")) if x] if t else []
+
+
+@lru_cache(maxsize=2048)
+def track_audio_features(track_id):
+    """BPM and key of a track, estimated from its 30-second Deezer preview (BPM from Deezer when it has one)."""
+    t = deezer_track(track_id)
+    out = {"bpm": None, "bpm_source": None, "key": None, "camelot": None}
+    analysed = None
+    if t.get("preview"):
+        try:
+            r = session.get(t["preview"], timeout=20)
+            if r.ok:
+                analysed = analyse(r.content)
+        except requests.RequestException:
+            pass
+    if analysed:
+        out.update(key=analysed.get("key"), camelot=analysed.get("camelot"))
+        if analysed.get("bpm"):
+            out.update(bpm=analysed["bpm"], bpm_source="estimated from the audio preview")
+    if t.get("bpm"):
+        out.update(bpm=round(t["bpm"]), bpm_source="Deezer")
+    return out
 
 
 def enrich(title, channel=""):
@@ -306,13 +332,13 @@ def enrich(title, channel=""):
     genres = {}
     _add_genres(genres, mb_release_group_genres(main, track["title"], alb_info.get("title")), "MusicBrainz (album)")
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
-    _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (morceau)")
+    _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (track)")
     album_genres = [{"name": g["name"], "sources": g["sources"]}
                     for g in sorted(genres.values(), key=lambda g: -g["score"])][:8]
     for a in artist_details:
         _add_genres(genres, a["genres"], f"MusicBrainz ({a['name']})")
         _add_genres(genres, a["audiodb_genres"], f"TheAudioDB ({a['name']})")
-    ordered = sorted(genres.values(), key=lambda g: -g["score"])  # tri stable : à égalité, ordre des sources
+    ordered = sorted(genres.values(), key=lambda g: -g["score"])  # stable sort: ties keep source order
     genre_list = [{"name": g["name"], "sources": g["sources"]} for g in ordered[:12]]
 
     return {
@@ -329,4 +355,5 @@ def enrich(title, channel=""):
         "genres": genre_list,
         "artists": artist_details,
         "deezer_url": track.get("link"),
+        **track_audio_features(track["id"]),
     }
