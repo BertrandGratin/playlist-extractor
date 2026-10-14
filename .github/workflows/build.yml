@@ -35,10 +35,11 @@ jobs:
       - name: Installer les dépendances
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt "pyinstaller>=6.10"
       - name: Empaqueter
         shell: bash
         run: |
+          echo 'VERSION = "${{ inputs.version || github.ref_name }}"' > _version.py
           SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
           pyinstaller --onefile --name Extracteur-Playlist \
             --add-data "index.html${SEP}." --collect-submodules yt_dlp app.py

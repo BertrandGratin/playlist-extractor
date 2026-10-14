@@ -15,6 +15,12 @@ Elle cherche aussi automatiquement les infos de chaque morceau, puis les regroup
 
 Va dans la section **Releases** du dépôt GitHub (colonne de droite), télécharge le zip qui correspond à ton ordi, dézippe-le et double-clique sur `Extracteur-Playlist`. Rien à installer. Le premier lancement affiche un avertissement parce que l'appli n'est pas signée : la marche à suivre est écrite sur la page de la release.
 
+### Mises à jour automatiques
+
+À chaque lancement, l'appli regarde sur GitHub s'il existe une version plus récente. Si oui, elle la télécharge, se remplace toute seule et redémarre (quelques secondes). Personne n'a besoin de retourner sur GitHub : il suffit que tu publies une nouvelle version. Sans internet, l'appli démarre simplement la version actuelle. Le numéro de version est affiché en bas de la page.
+
+(Seule exception : les versions 1.0 et 1.1 n'avaient pas encore ce système, il faut les remplacer une dernière fois à la main par la 1.2.)
+
 ## Lancer depuis le code (pour développer)
 
 ### Prérequis
@@ -45,7 +51,7 @@ Sources gratuites, sans compte ni clé : Genius (photos et description de l'arti
 
 ## Publier une nouvelle version
 
-Onglet **Actions** du dépôt > *Fabriquer l'appli* > *Run workflow* > tape un numéro de version (ex. `v1.1.0`) > *Run workflow*. Une dizaine de minutes plus tard, une nouvelle release apparaît avec les zips Windows et Mac.
+Onglet **Actions** du dépôt > *Fabriquer l'appli* > *Run workflow* > tape un numéro de version (ex. `v1.1.0`) > *Run workflow*. Quelques minutes plus tard, une nouvelle release apparaît avec les zips Windows et Mac, et toutes les applis déjà installées se mettront à jour à leur prochain lancement. Le numéro doit être plus grand que le précédent (ex. `v1.2.0` → `v1.2.1` ou `v1.3.0`).
 
 ## Si ça ne marche plus
 

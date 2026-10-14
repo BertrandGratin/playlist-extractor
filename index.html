@@ -154,6 +154,8 @@
   .jump:hover { border-color: var(--accent); }
   .jump.alb-j { border-radius: 8px; color: #c9c9d6; }
 
+  .foot { text-align: center; color: #55556a; font-size: 12px; padding: 0 0 24px; }
+  .foot a { color: inherit; }
   .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: white;
              border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -3px; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -224,6 +226,7 @@
   </section>
 </div>
 <div class="toast" id="toast">Copié !</div>
+<footer class="foot" id="foot"></footer>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -467,6 +470,10 @@ $("csv").onclick = () => {
   });
   save("﻿" + [head.map(q).join(";"), ...rows].join("\r\n"), fileSafe(data.title || "playlist") + ".csv", "text/csv;charset=utf-8");
 };
+
+fetch("/api/version").then(r => r.json()).then(v => {
+  $("foot").innerHTML = `Extracteur de playlist ${esc(v.version)} · <a href="https://github.com/BertrandGratin/playlist-extractor/releases" target="_blank" rel="noopener">GitHub</a>`;
+}).catch(() => {});
 
 $("form").onsubmit = async e => {
   e.preventDefault();

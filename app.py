@@ -12,6 +12,7 @@ from flask import Flask, Response, jsonify, request, send_file
 from yt_dlp import YoutubeDL
 
 from enrich import enrich, session
+from updater import VERSION, update_if_needed
 
 app = Flask(__name__)
 # Dossier des fichiers fournis (différent quand l'appli est empaquetée par PyInstaller).
@@ -79,6 +80,11 @@ def playlist():
                    description=info.get("description") or "", thumbnails=thumbs[:4])
 
 
+@app.get("/api/version")
+def version():
+    return jsonify(version=VERSION)
+
+
 @app.post("/api/enrich")
 def enrich_video():
     body = request.get_json(silent=True) or {}
@@ -113,8 +119,9 @@ def image():
 
 
 if __name__ == "__main__":
+    update_if_needed()
     PORT = free_port()
     threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}")).start()
-    print(f"\n  Extracteur de playlist lancé sur http://127.0.0.1:{PORT}")
+    print(f"\n  Extracteur de playlist {VERSION} lancé sur http://127.0.0.1:{PORT}")
     print("  Laisse cette fenêtre ouverte pendant que tu utilises l'appli ; ferme-la pour arrêter.\n")
     app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)
