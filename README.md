@@ -45,7 +45,7 @@ Private or deleted videos are skipped. The playlist must be public or unlisted.
 
 ## Where the info comes from
 
-Free sources, no account or API key: Genius (artist photos and description), Wikipedia (description), Deezer (album, cover, release date, label, genres, photo, BPM when known, 30-second audio preview), MusicBrainz (country of origin, album and artist genres), TheAudioDB (photos, genres and styles) and Wikimedia Commons (photos). Genres from every source are merged: those cited by several sources come first, and hovering over a genre shows where it came from.
+Free sources, no account or API key: Genius (artist photos and description), Wikipedia (description), Deezer (album, cover, release date, label, genres, photo, BPM when known, 30-second audio preview), MusicBrainz (country of origin, album and artist genres), TheAudioDB (photos, genres and styles) and Wikimedia Commons (photos). BPM and key are cross-checked with [GetSongBPM](https://getsongbpm.com). Genres from every source are merged: those cited by several sources come first, and hovering over a genre shows where it came from.
 
 **BPM and key** are estimated by analysing the track's 30-second Deezer preview (Deezer's own BPM is used when it has one). The key is also shown in Camelot notation for DJs. These are estimates: the tempo can occasionally come out at half or double the real value, and a key can be confused with its relative major/minor.
 
