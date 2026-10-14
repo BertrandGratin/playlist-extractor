@@ -7,8 +7,12 @@ Free sources, no API key needed:
 - Genius        : artist photo and description (the website's public API, no key)
 - TheAudioDB    : more artist photos, genres and styles (public test key "123")
 - Wikidata / Wikipedia / Commons : more photos, fallback description
+- YouTube       : the whole song's audio, analysed for BPM and key (falls back to the Deezer preview)
+- GetSongBPM    : BPM and key cross-check (needs a free API key, added at build time)
 """
+import os
 import re
+import tempfile
 import threading
 import time
 from difflib import SequenceMatcher
@@ -17,7 +21,14 @@ from urllib.parse import quote
 
 import requests
 
-from audio_analysis import analyse
+import audio_analysis
+from audio_analysis import NOTES, analyse, analyse_samples, camelot
+
+try:
+    from _secrets import GETSONGBPM_API_KEY
+except ImportError:
+    GETSONGBPM_API_KEY = ""
+GETSONGBPM_API_KEY = os.environ.get("GETSONGBPM_API_KEY", GETSONGBPM_API_KEY)
 
 UA = "PlaylistExtractor/1.0 (projet perso local)"
 session = requests.Session()
@@ -291,32 +302,169 @@ def audiodb_track_genres(artist, track):
 
 
 @lru_cache(maxsize=2048)
-def track_audio_features(track_id):
-    """BPM and key of a track, estimated from its 30-second Deezer preview (BPM from Deezer when it has one)."""
-    t = deezer_track(track_id)
-    out = {"bpm": None, "bpm_source": None, "key": None, "camelot": None}
-    analysed = None
-    if t.get("preview"):
+class _SilentLogger:
+    def debug(self, msg): pass
+    warning = info = error = debug
+
+
+@lru_cache(maxsize=512)
+def youtube_audio_features(url):
+    """BPM and key from the whole song: downloads the YouTube audio (no conversion) and analyses it."""
+    if not url:
+        return None
+    import yt_dlp
+    with tempfile.TemporaryDirectory() as tmp:
+        opts = {
+            "format": "bestaudio[filesize<40M]/bestaudio[filesize_approx<40M]/bestaudio/best[height<=480]/best",
+            "outtmpl": os.path.join(tmp, "audio.%(ext)s"),
+            "quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True, "logger": _SilentLogger(),
+            "match_filter": yt_dlp.utils.match_filter_func("duration <? 900"),  # skip mixes over 15 min
+        }
         try:
-            r = session.get(t["preview"], timeout=20)
-            if r.ok:
-                analysed = analyse(r.content)
-        except requests.RequestException:
-            pass
-    if analysed:
-        out.update(key=analysed.get("key"), camelot=analysed.get("camelot"))
-        if analysed.get("bpm"):
-            out.update(bpm=analysed["bpm"], bpm_source="estimated from the audio preview")
-    if t.get("bpm"):
-        out.update(bpm=round(t["bpm"]), bpm_source="Deezer")
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([url])
+            files = [os.path.join(tmp, f) for f in os.listdir(tmp)]
+            if not files:
+                return None
+            return analyse_samples(audio_analysis.decode_file(files[0]))
+        except Exception:
+            return None
+
+
+def deezer_preview_features(track_id):
+    t = deezer_track(track_id)
+    if not t.get("preview"):
+        return None
+    try:
+        r = session.get(t["preview"], timeout=20)
+        return analyse(r.content) if r.ok else None
+    except requests.RequestException:
+        return None
+
+
+_KEY_RE = re.compile(r"^\s*([A-Ga-g])\s*([#♯b♭]?)\s*(m|min|minor|maj|major)?\s*$")
+
+
+def parse_key(text):
+    """'F♯m', 'Bb', 'C# minor'… -> (pitch class, "major"/"minor") or None."""
+    m = _KEY_RE.match(text or "")
+    if not m:
+        return None
+    pc = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}[m.group(1).upper()]
+    pc += {"#": 1, "♯": 1, "b": -1, "♭": -1}.get(m.group(2), 0)
+    mode = "minor" if (m.group(3) or "").lower() in ("m", "min", "minor") else "major"
+    return pc % 12, mode
+
+
+@lru_cache(maxsize=512)
+def getsongbpm(artist, title):
+    """{"bpm", "key"} from GetSongBPM, or None (no key configured, not found, offline…)."""
+    if not GETSONGBPM_API_KEY:
+        return None
+    lookup = f"song:{title} artist:{artist}"
+    for base in ("https://api.getsong.co", "https://api.getsongbpm.com"):
+        try:
+            r = session.get(f"{base}/search/", timeout=TIMEOUT,
+                            params={"api_key": GETSONGBPM_API_KEY, "type": "both", "lookup": lookup})
+            if not r.ok:
+                continue
+            results = (r.json() or {}).get("search")
+        except (requests.RequestException, ValueError):
+            continue
+        if not isinstance(results, list):
+            return None
+        best = max(results, key=lambda x: _sim(x.get("title", ""), title) + _sim((x.get("artist") or {}).get("name", ""), artist),
+                   default=None)
+        if not best or _sim(best.get("title", ""), title) < 0.6 or _sim((best.get("artist") or {}).get("name", ""), artist) < 0.5:
+            return None
+        try:
+            bpm = float(best.get("tempo") or 0) or None
+        except ValueError:
+            bpm = None
+        return {"bpm": bpm, "key": parse_key(best.get("key_of")), "url": best.get("uri")}
+    return None
+
+
+def _same_tempo(a, b, tol=0.03):
+    return abs(a - b) <= tol * b
+
+
+def combine_audio(analysed, source, deezer_bpm=None, gsb=None):
+    """Cross-checks the audio analysis with Deezer's and GetSongBPM's values.
+
+    Agreement between independent sources raises the confidence to "high"; disagreement lowers it and the
+    other candidates are listed (bpm_alternatives / key_alternatives) so they can be shown on hover.
+    """
+    a = analysed or {}
+    out = {"bpm": None, "bpm_confidence": None, "bpm_sources": [], "bpm_alternatives": [],
+           "key": None, "camelot": None, "key_confidence": None, "key_sources": [], "key_alternatives": [],
+           "audio_source": source if analysed else None, "tuning_cents": a.get("tuning_cents")}
+
+    # --- BPM ---
+    refs = [(name, v) for name, v in (("Deezer", deezer_bpm), ("GetSongBPM", (gsb or {}).get("bpm"))) if v]
+    if a.get("bpm"):
+        bpm, conf, srcs = a["bpm"], a["bpm_confidence"], [f"audio analysis ({source})"]
+        alt = a.get("alt_bpm")
+        for name, v in refs:
+            if _same_tempo(v, bpm):
+                srcs.append(name)
+            elif alt and _same_tempo(v, alt):  # the other source settles the half/double doubt
+                bpm, alt = alt, None
+                srcs = [f"audio analysis ({source})", name]
+        agreeing = len(srcs) - 1
+        disagreeing = [f"{round(v)} ({name})" for name, v in refs if name not in srcs]
+        octave_only = all(_same_tempo(v, bpm * 2) or _same_tempo(v, bpm / 2) for name, v in refs if name not in srcs)
+        if agreeing:
+            conf = "high"
+        elif disagreeing:  # half/double time is a matter of feel; any other mismatch is a real doubt
+            conf = "medium" if octave_only and conf == "high" else "low"
+        if alt and conf != "high":
+            out["bpm_alternatives"].append(f"{alt} (half/double)")
+        out["bpm_alternatives"] += disagreeing
+        out.update(bpm=int(round(bpm)), bpm_confidence=conf, bpm_sources=srcs)
+    elif refs:
+        agree = len(refs) == 2 and _same_tempo(refs[0][1], refs[1][1])
+        out.update(bpm=int(round(refs[0][1])), bpm_confidence="high" if agree else "medium",
+                   bpm_sources=[n for n, _ in refs] if agree else [refs[0][0]],
+                   bpm_alternatives=[] if agree or len(refs) < 2 else [f"{round(refs[1][1])} ({refs[1][0]})"])
+
+    # --- Key ---
+    ref_key = (gsb or {}).get("key")
+    label = lambda k: f"{NOTES[k[0]]} {k[1]}"
+    if a.get("key"):
+        key, conf, srcs = a["key"], a["key_confidence"], [f"audio analysis ({source})"]
+        if ref_key:
+            if label(ref_key) == key:
+                conf = "high"; srcs.append("GetSongBPM")
+            elif conf == "high":
+                conf = "medium"; out["key_alternatives"].append(f"{label(ref_key)} (GetSongBPM)")
+            else:  # uncertain analysis and the database disagrees: show the database's key, flagged as doubtful
+                out["key_alternatives"].append(f"{key} (audio analysis)")
+                key, conf, srcs = label(ref_key), "low", ["GetSongBPM"]
+        tonic, mode = NOTES.index(key.split()[0]), key.split()[1]
+        out.update(key=key, camelot=camelot(tonic, mode), key_confidence=conf, key_sources=srcs)
+    elif ref_key:
+        out.update(key=label(ref_key), camelot=camelot(*ref_key), key_confidence="medium", key_sources=["GetSongBPM"])
     return out
 
 
-def enrich(title, channel=""):
+def track_audio_features(track_id=None, video_url="", artist="", title=""):
+    """BPM and key: whole-song analysis (YouTube audio, else the 30 s Deezer preview), cross-checked with
+    Deezer's BPM and GetSongBPM."""
+    analysed, source = youtube_audio_features(video_url), "whole song"
+    if not analysed and track_id:
+        analysed, source = deezer_preview_features(track_id), "30 s preview"
+    deezer_bpm = (deezer_track(track_id).get("bpm") or None) if track_id else None
+    gsb = getsongbpm(artist, title) if artist and title else None
+    return combine_audio(analysed, source, deezer_bpm, gsb)
+
+
+def enrich(title, channel="", video_url=""):
     artist_guess, track_guess = parse_title(title, channel)
     candidates = _search_deezer(artist_guess, track_guess)
     if not candidates:
-        return {"found": False, "guess": {"artist": artist_guess, "track": track_guess}}
+        return {"found": False, "guess": {"artist": artist_guess, "track": track_guess},
+                **track_audio_features(None, video_url, artist_guess, track_guess)}
 
     track, album = _pick_album(candidates)
     full_track = deezer_track(track["id"])
@@ -355,5 +503,5 @@ def enrich(title, channel=""):
         "genres": genre_list,
         "artists": artist_details,
         "deezer_url": track.get("link"),
-        **track_audio_features(track["id"]),
+        **track_audio_features(track["id"], video_url, main, track.get("title") or track_guess),
     }

@@ -5,3 +5,4 @@ dist/
 *.spec
 *.zip
 .DS_Store
+_secrets.py

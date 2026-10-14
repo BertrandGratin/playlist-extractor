@@ -38,11 +38,15 @@ jobs:
           pip install -r requirements.txt "pyinstaller>=6.10"
       - name: Package
         shell: bash
+        env:
+          GETSONGBPM_API_KEY: ${{ secrets.GETSONGBPM_API_KEY }}
         run: |
+          [ -n "$GETSONGBPM_API_KEY" ] || echo "::warning::GETSONGBPM_API_KEY secret is missing, GetSongBPM cross-check disabled"
+          python -c "import os; open('_secrets.py', 'w').write('GETSONGBPM_API_KEY = %r\n' % os.environ.get('GETSONGBPM_API_KEY', ''))"
           echo 'VERSION = "${{ inputs.version || github.ref_name }}"' > _version.py
           SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
           pyinstaller --onefile --name Playlist-Extractor \
-            --add-data "index.html${SEP}." --collect-submodules yt_dlp --collect-all miniaudio app.py
+            --add-data "index.html${SEP}." --collect-submodules yt_dlp --collect-all miniaudio --collect-all av --hidden-import _cffi_backend app.py
       # Two zips per platform: the English-named one to download, and a copy under the old French
       # name so that apps installed before v1.3.0 (which look for that name) can still auto-update.
       - name: Zip (Windows)

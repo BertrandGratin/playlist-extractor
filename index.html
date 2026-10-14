@@ -181,6 +181,10 @@
   .jump:hover { color: var(--magenta); }
   .jump .yr { color: var(--dim); }
   .cam { color: var(--dim); }
+  .conf { display: inline-block; margin-left: 5px; font-size: 11px; font-weight: 700; line-height: 1; cursor: help; }
+  .conf.hi { color: var(--green); }
+  .conf.mid { color: var(--muted); }
+  .conf.lo { color: var(--orange); }
   .lbl { display: none; }
   .wait { color: var(--dim); }
 
@@ -353,18 +357,35 @@ function renderTracks() {
       <div class="cell c-key"></div>
     </div>`).join("");
 }
+function confMark(level) {
+  if (level === "high") return `<span class="conf hi">✓</span>`;
+  if (level === "medium") return `<span class="conf mid">?</span>`;
+  if (level === "low") return `<span class="conf lo">?</span>`;
+  return "";
+}
+function confTip(what, level, sources, alts) {
+  const words = { high: "high (sources agree)", medium: "medium, double-check by ear", low: "low, likely wrong, double-check by ear" };
+  let t = `${what} · confidence: ${words[level] || "unknown"}`;
+  if (sources?.length) t += `\nSources: ${sources.join(" + ")}`;
+  if (alts?.length) t += `\nOther candidates: ${alts.join(", ")}`;
+  return t;
+}
+function renderAudio(e, cell) {
+  cell("bpm").innerHTML = e.bpm ? `<span class="grp" title="${esc(confTip("BPM", e.bpm_confidence, e.bpm_sources, e.bpm_alternatives))}"><span class="lbl">BPM</span>${e.bpm}${confMark(e.bpm_confidence)}${copyBtn(e.bpm, "BPM")}</span>` : `<span class="wait">–</span>`;
+  cell("key").innerHTML = e.key ? `<span class="grp" title="${esc(confTip(`Key (Camelot ${e.camelot || "?"})`, e.key_confidence, e.key_sources, e.key_alternatives))}"><span class="lbl">Key</span>${esc(e.key)}${e.camelot ? `&nbsp;<span class="cam">${esc(e.camelot)}</span>` : ""}${confMark(e.key_confidence)}${copyBtn(e.key, "key")}</span>` : `<span class="wait">–</span>`;
+}
 function renderTrackInfo(i) {
   const e = data.videos[i].meta, row = $("row" + i), cell = c => row.querySelector(".c-" + c);
   if (!e?.found) {
     cell("artist").innerHTML = `<span class="wait">No info found</span>`;
+    if (e) renderAudio(e, cell);
     return;
   }
   const year = (e.release_date || "").slice(0, 4);
   cell("artist").innerHTML = `<div class="stack"><span class="lbl">Artist</span>` + e.artists.map(a =>
     `<span class="grp"><button class="jump" data-jump="${slug("a" + a.name)}">${esc(a.name)}</button>${copyBtn(a.name, "artist")}</span>`).join("") + `</div>`;
   cell("album").innerHTML = e.album ? `<span class="grp"><span class="lbl">Album</span><button class="jump" data-jump="${albumKey(e)}">${esc(e.album)}${year && year !== "0000" ? ` <span class="yr">${year}</span>` : ""}</button>${copyBtn(e.album, "album")}</span>` : "";
-  cell("bpm").innerHTML = e.bpm ? `<span class="grp" title="BPM: ${esc(e.bpm_source || "")}"><span class="lbl">BPM</span>${e.bpm}${copyBtn(e.bpm, "BPM")}</span>` : `<span class="wait">–</span>`;
-  cell("key").innerHTML = e.key ? `<span class="grp" title="Key estimated from the audio preview · Camelot ${esc(e.camelot || "")}"><span class="lbl">Key</span>${esc(e.key)}${e.camelot ? `&nbsp;<span class="cam">${esc(e.camelot)}</span>` : ""}${copyBtn(e.key, "key")}</span>` : `<span class="wait">–</span>`;
+  renderAudio(e, cell);
 }
 
 /* ---------- Artists (one card per artist) ---------- */
@@ -472,7 +493,7 @@ async function enrichAll(id) {
       const i = next++, v = data.videos[i];
       try {
         const r = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: v.title, channel: v.channel }) });
+          body: JSON.stringify({ title: v.title, channel: v.channel, url: v.url }) });
         v.meta = await r.json();
       } catch { v.meta = { found: false }; }
       if (id !== runId) return;
@@ -520,19 +541,19 @@ function save(text, name, type) {
 $("csv").onclick = () => {
   if (!data) return;
   const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
-  const head = ["YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "Key", "Camelot", "Cover", "Artist photos"];
+  const head = ["YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "BPM confidence", "Key", "Camelot", "Key confidence", "Cover", "Artist photos"];
   const rows = data.videos.map(v => {
-    const e = v.meta?.found ? v.meta : {};
+    const e = v.meta || {};
     const ar = e.artists || [];
     return [v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
-            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.bpm, e.key, e.camelot, e.cover,
+            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.bpm, e.bpm_confidence, e.key, e.camelot, e.key_confidence, e.cover,
             ar.flatMap(a => (a.images || []).map(i => i.url)).join(" ")].map(q).join(";");
   });
   save("﻿" + [head.map(q).join(";"), ...rows].join("\r\n"), fileSafe(data.title || "playlist") + ".csv", "text/csv;charset=utf-8");
 };
 
 fetch("/api/version").then(r => r.json()).then(v => {
-  $("foot").innerHTML = `Playlist Extractor ${esc(v.version)} · <a href="https://github.com/BertrandGratin/playlist-extractor/releases" target="_blank" rel="noopener">GitHub</a>`;
+  $("foot").innerHTML = `Playlist Extractor ${esc(v.version)} · <a href="https://github.com/BertrandGratin/playlist-extractor/releases" target="_blank" rel="noopener">GitHub</a> · BPM &amp; key data: <a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a>`;
 }).catch(() => {});
 
 $("form").onsubmit = async e => {
