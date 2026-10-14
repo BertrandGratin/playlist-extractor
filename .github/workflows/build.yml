@@ -1,0 +1,74 @@
+name: Fabriquer l'appli
+
+# Une nouvelle version est publiée à chaque tag « v… » (ex. v1.0.0),
+# ou à la main depuis l'onglet Actions (« Run workflow »).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: Extracteur-Playlist-Windows.zip
+          - os: macos-latest   # Mac Apple Silicon (M1, M2…)
+            asset: Extracteur-Playlist-Mac-AppleSilicon.zip
+          - os: macos-15-intel # Mac Intel
+            asset: Extracteur-Playlist-Mac-Intel.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Empaqueter
+        shell: bash
+        run: |
+          SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
+          pyinstaller --onefile --name Extracteur-Playlist \
+            --add-data "index.html${SEP}." --collect-submodules yt_dlp app.py
+      - name: Zipper (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/Extracteur-Playlist.exe -DestinationPath ${{ matrix.asset }}
+      - name: Zipper (Mac)
+        if: runner.os == 'macOS'
+        run: cd dist && ditto -c -k --keepParent Extracteur-Playlist ../${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          body: |
+            ## Télécharger
+            - **Windows** : `Extracteur-Playlist-Windows.zip`
+            - **Mac M1/M2/M3/M4** : `Extracteur-Playlist-Mac-AppleSilicon.zip`
+            - **Mac Intel** : `Extracteur-Playlist-Mac-Intel.zip`
+
+            Dézippe, puis double-clique sur `Extracteur-Playlist`. La page s'ouvre dans ton navigateur ; laisse la fenêtre noire ouverte pendant que tu l'utilises.
+
+            **Premier lancement** : l'appli n'est pas signée, donc
+            - Windows affiche « Windows a protégé votre ordinateur » : clique sur *Informations complémentaires* puis *Exécuter quand même*.
+            - Mac refuse de l'ouvrir : va dans *Réglages Système > Confidentialité et sécurité*, tout en bas clique sur *Ouvrir quand même*, puis relance-la.

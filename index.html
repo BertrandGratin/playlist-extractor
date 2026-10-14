@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extracteur de playlist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f13; --panel: #18181f; --panel-2: #20202a; --border: #2c2c38;
+    --text: #f2f2f5; --muted: #9a9aab; --accent: #ff3b5c; --accent-2: #ff7a45;
+    --ok: #3ddc97;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: Inter, system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 10% -10%, #2a1020 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, #2a1a10 0%, transparent 55%), var(--bg);
+    color: var(--text);
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 20px 80px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  .logo {
+    width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 30px -8px var(--accent);
+  }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 4px 0 0; font-size: 14px; }
+
+  form { display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--border);
+         padding: 8px; border-radius: 16px; }
+  input {
+    flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--text);
+    font: inherit; font-size: 15px; padding: 12px 14px;
+  }
+  input::placeholder { color: #666676; }
+  button { font: inherit; cursor: pointer; border: 0; border-radius: 12px; transition: .15s; }
+  .primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white;
+    font-weight: 600; padding: 0 22px; white-space: nowrap;
+  }
+  .primary:hover { filter: brightness(1.1); }
+  .primary:disabled { opacity: .6; cursor: wait; }
+
+  .error { margin-top: 16px; padding: 12px 16px; border-radius: 12px; background: #3a1520;
+           border: 1px solid #6b2233; color: #ffb3c0; display: none; }
+
+  .results { margin-top: 32px; display: none; }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+             flex-wrap: wrap; margin-bottom: 14px; }
+  .pl-title { font-size: 18px; font-weight: 600; margin: 0; }
+  .count { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+           padding: 9px 14px; font-size: 13px; font-weight: 500; }
+  .ghost:hover { border-color: #4a4a5c; background: #262632; }
+  select.ghost { font: inherit; font-size: 13px; border-radius: 12px; cursor: pointer; outline: 0; }
+
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row {
+    display: grid; grid-template-columns: 28px 72px 1fr auto; align-items: start; gap: 14px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+    transition: .15s;
+  }
+  .row:hover { border-color: #3d3d4d; transform: translateY(-1px); }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; padding-top: 4px; }
+  .cover { width: 72px; height: 72px; border-radius: 10px; background: var(--panel-2); object-fit: cover;
+           border: 1px solid var(--border); display: block; }
+  .cover.loading { background: linear-gradient(90deg, var(--panel-2), #2a2a36, var(--panel-2));
+                   background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .info { margin-top: 8px; font-size: 13px; color: #c9c9d6; display: flex; flex-direction: column; gap: 5px; }
+  .info .muted { color: var(--muted); }
+  .artists { display: flex; flex-wrap: wrap; gap: 6px; }
+  .artist { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+            padding: 2px 10px; font-size: 12.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: #ffd0b8;
+          background: rgba(255,122,69,.12); border: 1px solid rgba(255,122,69,.3); }
+  .btns { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .gallery { grid-column: 3 / -1; display: none; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
+  .gallery.open { display: flex; }
+  .gal-artist { font-size: 12px; color: var(--muted); width: 100%; margin-bottom: -6px; }
+  .shot { position: relative; width: 140px; }
+  .shot img { width: 140px; height: 140px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; }
+  .shot a { position: absolute; right: 6px; top: 112px; background: rgba(0,0,0,.7); color: white;
+            border-radius: 8px; padding: 3px 7px; font-size: 11px; text-decoration: none; }
+  .shot a:hover { background: var(--accent); }
+  .shot a.zoom { right: auto; left: 6px; }
+  .shot .src { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+  .progress { height: 3px; border-radius: 3px; background: var(--panel-2); margin: -4px 0 14px; overflow: hidden; }
+  .progress div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+  .meta { min-width: 0; }
+  .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .line + .line { margin-top: 3px; }
+  .title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .link { font-size: 12.5px; color: var(--muted); text-decoration: none; display: block;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .ic { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+        background: transparent; color: var(--muted); border-radius: 7px; }
+  .ic:hover { background: var(--panel-2); color: var(--text); }
+  .ic.done { color: var(--ok); }
+  .link:hover { color: var(--accent-2); }
+  .copy { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+          padding: 7px 12px; font-size: 12.5px; text-align: center; text-decoration: none; border-radius: 12px; }
+  .copy[hidden] { display: none; }
+  .copy:hover { border-color: var(--accent); }
+  .copy.done { border-color: var(--ok); color: var(--ok); }
+
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: white;
+             border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+           background: var(--ok); color: #06261a; font-weight: 600; padding: 10px 18px; border-radius: 999px;
+           opacity: 0; transition: .25s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%); }
+
+  @media (max-width: 560px) {
+    form { flex-direction: column; } .primary { padding: 12px; }
+    .row { grid-template-columns: 56px 1fr; } .num { display: none; }
+    .cover { width: 56px; height: 56px; } .btns { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+    .gallery { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm14-4v8.2a3 3 0 1 0 2 2.8V12h3v-2z"/></svg>
+    </div>
+    <div>
+      <h1>Extracteur de playlist</h1>
+      <p class="sub">Colle un lien de playlist YouTube : titres, liens, covers, artistes, albums, labels et genres.</p>
+    </div>
+  </header>
+
+  <form id="form">
+    <input id="url" type="url" required autocomplete="off"
+           placeholder="https://www.youtube.com/playlist?list=...">
+    <button class="primary" id="go" type="submit">Extraire</button>
+  </form>
+  <div class="error" id="error"></div>
+
+  <section class="results" id="results">
+    <div class="toolbar">
+      <div>
+        <p class="pl-title" id="plTitle"></p>
+        <div class="count" id="count"></div>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="copyTitles">Copier tous les titres</button>
+        <button class="ghost" id="copyLinks">Copier tous les liens</button>
+        <button class="ghost" id="csv">Exporter tout (.csv)</button>
+      </div>
+    </div>
+    <div class="progress" title="Recherche des infos d'album"><div id="bar"></div></div>
+    <div class="list" id="list"></div>
+  </section>
+</div>
+<div class="toast" id="toast">Copié !</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null, runId = 0;
+const regionFr = (() => { try { return new Intl.DisplayNames(["fr"], { type: "region" }); } catch { return null; } })();
+
+
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  toast("Copié !");
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1400);
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+const fileSafe = s => (s || "image").replace(/[\\/:*?"<>|]/g, "_");
+const dl = (url, name) => `/api/image?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileSafe(name))}`;
+
+function flag(cc) {
+  if (!cc || cc.length !== 2) return "";
+  return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+}
+function countryName(a, withFlag = true) {
+  if (a.country) return `${withFlag ? flag(a.country) + " " : ""}${regionFr?.of(a.country) || a.country}`;
+  return a.country_label || "";
+}
+function frDate(d) {
+  if (!d || d.startsWith("0000")) return "";
+  const [y, m, j] = d.split("-");
+  return m && j ? new Date(+y, m - 1, +j).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : y;
+}
+
+function render() {
+  $("plTitle").textContent = data.title;
+  $("count").textContent = `${data.count} vidéo${data.count > 1 ? "s" : ""}`;
+  $("list").innerHTML = data.videos.map((v, i) => `
+    <div class="row" id="row${i}">
+      <div class="num">${i + 1}</div>
+      <div class="cover loading"></div>
+      <div class="meta">
+        <div class="line"><div class="title" title="${esc(v.title)}">${esc(v.title)}</div>
+          <button class="ic" data-act="copy" data-field="title" data-i="${i}" title="Copier le titre"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+        <div class="line"><a class="link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a>
+          <button class="ic" data-act="copy" data-field="url" data-i="${i}" title="Copier le lien"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+        <div class="info"><span class="muted">Recherche des infos…</span></div>
+      </div>
+      <div class="btns">
+        <a class="copy" data-act="cover" hidden>Cover ⬇</a>
+        <button class="copy" data-act="gal" data-i="${i}" hidden>Photos artiste</button>
+      </div>
+      <div class="gallery"></div>
+    </div>`).join("");
+  $("results").style.display = "block";
+}
+
+function renderInfo(i) {
+  const v = data.videos[i], e = v.meta, row = $("row" + i);
+  const coverEl = row.querySelector(".cover"), info = row.querySelector(".info");
+  if (!e || !e.found) {
+    coverEl.classList.remove("loading");
+    info.innerHTML = `<span class="muted">Infos introuvables pour ce morceau.</span>`;
+    return;
+  }
+  if (e.cover) {
+    const img = document.createElement("img");
+    img.className = "cover"; img.src = e.cover; img.alt = e.album || ""; img.loading = "lazy";
+    coverEl.replaceWith(img);
+    const a = row.querySelector('[data-act="cover"]');
+    a.href = dl(e.cover, `${e.artists[0]?.name || ""} - ${e.album || "cover"}`); a.hidden = false;
+  } else coverEl.classList.remove("loading");
+
+  const artists = e.artists.map(a => {
+    const c = countryName(a);
+    return `<span class="artist">${esc(a.name)}${c ? ` <span class="muted">· ${esc(c)}</span>` : ""}</span>`;
+  }).join("");
+  const album = [
+    e.album && `💿 ${esc(e.album)}${e.record_type && e.record_type !== "album" ? ` <span class="muted">(${esc(e.record_type)})</span>` : ""}`,
+    e.release_date && `📅 ${esc(frDate(e.release_date))}`,
+    e.label && `🏷️ ${esc(e.label)}`,
+  ].filter(Boolean).join(' <span class="muted">·</span> ');
+  info.innerHTML = `
+    <div class="artists">${artists}</div>
+    ${album ? `<div>${album}</div>` : ""}
+    ${e.genres?.length ? `<div class="chips">${e.genres.map(g => `<span class="chip" title="Source : ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
+
+  const gal = row.querySelector(".gallery");
+  const blocks = e.artists.filter(a => a.images?.length).map(a =>
+    `<div class="gal-artist">${esc(a.name)}</div>` + a.images.map((im, k) => `
+      <div class="shot">
+        <img src="${esc(im.url)}" alt="${esc(a.name)}" loading="lazy" onerror="this.closest('.shot').remove()">
+        <a href="${esc(im.url)}" target="_blank" rel="noopener" class="zoom" title="Voir en grand">⤢</a>
+        <a href="${dl(im.url, `${a.name} ${k + 1}`)}" title="Télécharger">⬇</a>
+        <div class="src">${esc(im.source)}</div>
+      </div>`).join(""));
+  const nb = e.artists.reduce((n, a) => n + (a.images?.length || 0), 0);
+  if (blocks.length) {
+    gal.innerHTML = blocks.join("");
+    const gb = row.querySelector('[data-act="gal"]');
+    gb.dataset.label = `Photos artiste (${nb})`; gb.textContent = gb.dataset.label; gb.hidden = false;
+  }
+}
+
+async function enrichAll(id) {
+  let next = 0, done = 0;
+  const total = data.videos.length;
+  $("bar").style.width = "0";
+  async function worker() {
+    while (next < total && id === runId) {
+      const i = next++, v = data.videos[i];
+      try {
+        const r = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: v.title, channel: v.channel }) });
+        v.meta = await r.json();
+      } catch { v.meta = { found: false }; }
+      if (id !== runId) return;
+      renderInfo(i);
+      $("bar").style.width = `${(++done / total) * 100}%`;
+    }
+  }
+  await Promise.all([1, 2, 3, 4].map(worker));
+}
+
+$("list").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  if (b.dataset.act === "copy") {
+    const icon = b.innerHTML;
+    copy(data.videos[b.dataset.i][b.dataset.field]);
+    b.classList.add("done"); b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+    setTimeout(() => { b.classList.remove("done"); b.innerHTML = icon; }, 1500);
+  } else if (b.dataset.act === "gal") {
+    const g = b.closest(".row").querySelector(".gallery");
+    g.classList.toggle("open");
+    b.textContent = g.classList.contains("open") ? "Masquer photos" : b.dataset.label;
+  }
+});
+
+$("copyTitles").onclick = () => data && copy(data.videos.map(v => v.title).join("\n"));
+$("copyLinks").onclick = () => data && copy(data.videos.map(v => v.url).join("\n"));
+
+function save(text, name, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+$("csv").onclick = () => {
+  if (!data) return;
+  const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
+  const head = ["Titre YouTube", "Lien", "Artistes", "Pays", "Morceau", "Album", "Date de sortie", "Label", "Genres", "Cover", "Photos artiste"];
+  const rows = data.videos.map(v => {
+    const e = v.meta?.found ? v.meta : {};
+    const ar = e.artists || [];
+    return [v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
+            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.cover,
+            ar.flatMap(a => (a.images || []).map(i => i.url)).join(" ")].map(q).join(";");
+  });
+  save("﻿" + [head.map(q).join(";"), ...rows].join("\r\n"), fileSafe(data.title || "playlist") + ".csv", "text/csv;charset=utf-8");
+};
+
+$("form").onsubmit = async e => {
+  e.preventDefault();
+  const btn = $("go"); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  $("error").style.display = "none";
+  const id = ++runId;
+  try {
+    const r = await fetch("/api/playlist", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("url").value })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Erreur inconnue");
+    data = j; render();
+    enrichAll(id);
+  } catch (err) {
+    $("error").textContent = err.message; $("error").style.display = "block";
+    $("results").style.display = "none";
+  } finally {
+    btn.disabled = false; btn.textContent = "Extraire";
+  }
+};
+</script>
+</body>
+</html>
