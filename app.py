@@ -67,7 +67,16 @@ def playlist():
     if not videos and info.get("id") and not entries:
         return jsonify(error="Ce lien ne ressemble pas à une playlist."), 400
 
-    return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos)
+    # Images de la playlist (miniatures YouTube), de la plus grande à la plus petite, sans doublon de taille.
+    thumbs, sizes = [], set()
+    for t in sorted(info.get("thumbnails") or [], key=lambda t: -(t.get("width") or 0)):
+        if t.get("url") and t.get("width") not in sizes:
+            sizes.add(t.get("width"))
+            thumbs.append(t["url"])
+
+    return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos,
+                   owner=info.get("uploader") or info.get("channel") or "",
+                   description=info.get("description") or "", thumbnails=thumbs[:4])
 
 
 @app.post("/api/enrich")
@@ -79,7 +88,8 @@ def enrich_video():
         return jsonify(found=False, error=str(exc))
 
 
-IMAGE_HOSTS = ("dzcdn.net", "deezer.com", "theaudiodb.com", "wikimedia.org", "coverartarchive.org", "archive.org")
+IMAGE_HOSTS = ("dzcdn.net", "deezer.com", "theaudiodb.com", "wikimedia.org", "coverartarchive.org", "archive.org",
+               "genius.com", "ytimg.com", "ggpht.com", "googleusercontent.com")
 
 
 @app.get("/api/image")

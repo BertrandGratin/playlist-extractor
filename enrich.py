@@ -3,8 +3,9 @@
 Sources gratuites sans clé API :
 - Deezer        : morceau, album, cover, date de sortie, label, genres, photo d'artiste
 - MusicBrainz   : pays d'origine de l'artiste (+ genres de secours, lien Wikidata)
+- Genius        : photo et description de l'artiste (API publique du site, sans clé)
 - TheAudioDB    : photos supplémentaires de l'artiste (clé publique de test "123")
-- Wikidata      : photo Wikimedia Commons en secours
+- Wikidata / Wikipedia / Commons : photos et description en secours
 """
 import re
 import threading
@@ -149,6 +150,46 @@ def _add_genres(bucket, names, source):
             g["score"] += 1
 
 
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
+def _get_browser(url, **params):
+    """Requête avec un en-tête de navigateur (Genius refuse les robots génériques)."""
+    try:
+        r = session.get(url, params=params or None, timeout=TIMEOUT,
+                        headers={"User-Agent": BROWSER_UA, "Accept": "application/json"})
+        if r.ok:
+            return r.json()
+    except (requests.RequestException, ValueError):
+        pass
+    return None
+
+
+def genius_artist(name):
+    """Photo(s), description et page Genius d'un artiste."""
+    data = _get_browser("https://genius.com/api/search/artist", q=name) or {}
+    hits = []
+    for section in (data.get("response") or {}).get("sections") or []:
+        hits += [h.get("result") or {} for h in section.get("hits") or []]
+    hit = next((h for h in hits if h.get("id") and _sim(h.get("name", ""), name) > 0.85), None)
+    if not hit:
+        return None
+    full = ((_get_browser(f"https://genius.com/api/artists/{hit['id']}", text_format="plain") or {})
+            .get("response") or {}).get("artist") or hit
+    desc = ((full.get("description") or {}).get("plain") or "").strip()
+    images = [u for u in (full.get("image_url"), full.get("header_image_url"))
+              if u and "default_avatar" not in u and "default_cover" not in u]
+    return {"images": images, "description": "" if desc == "?" else desc, "url": full.get("url") or hit.get("url")}
+
+
+def wikipedia_summary(title, lang):
+    d = _get(f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/" + quote(title.replace(" ", "_"), safe="")) or {}
+    if d.get("type") == "standard" and d.get("extract"):
+        return {"text": d["extract"], "url": ((d.get("content_urls") or {}).get("desktop") or {}).get("page")}
+    return None
+
+
 def _mb_genres(entity):
     return [g["name"] for g in sorted((entity or {}).get("genres") or [], key=lambda g: -g.get("count", 0))]
 
@@ -156,7 +197,8 @@ def _mb_genres(entity):
 @lru_cache(maxsize=1024)
 def artist_info(name, deezer_picture=""):
     """Pays d'origine, genres et toutes les photos trouvées d'un artiste."""
-    info = {"name": name, "country": None, "country_label": None, "images": [], "genres": [], "audiodb_genres": []}
+    info = {"name": name, "country": None, "country_label": None, "images": [], "genres": [],
+            "audiodb_genres": [], "descriptions": [], "links": {}}
     seen = set()
 
     def add_img(url, source):
@@ -164,6 +206,13 @@ def artist_info(name, deezer_picture=""):
             seen.add(url)
             info["images"].append({"url": url, "source": source})
 
+    genius = genius_artist(name)
+    if genius:
+        for url in genius["images"]:
+            add_img(url, "Genius")
+        if genius["description"]:
+            info["descriptions"].append({"source": "Genius", "text": genius["description"], "url": genius["url"]})
+        info["links"]["Genius"] = genius["url"]
     add_img(deezer_picture, "Deezer")
 
     mb = (_mb("artist/", query=f'artist:"{name}"', limit=3) or {}).get("artists") or []
@@ -197,6 +246,19 @@ def artist_info(name, deezer_picture=""):
             for c in claims.get("P373", [])[:1]:  # catégorie Commons : autres photos
                 for url in _commons_category(c["mainsnak"]["datavalue"]["value"]):
                     add_img(url, "Wikimedia Commons")
+            sitelinks = ((ent.get("entities") or {}).get(wikidata) or {}).get("sitelinks") or {}
+            for lang in ("fr", "en"):
+                title = (sitelinks.get(f"{lang}wiki") or {}).get("title")
+                summary = title and wikipedia_summary(title, lang)
+                if summary:
+                    info["descriptions"].append({"source": f"Wikipédia ({lang.upper()})", **summary})
+                    info["links"]["Wikipédia"] = info["links"].get("Wikipédia") or summary["url"]
+                    break
+
+    artist_genres = {}
+    _add_genres(artist_genres, info["genres"], "MusicBrainz")
+    _add_genres(artist_genres, info["audiodb_genres"], "TheAudioDB")
+    info["all_genres"] = [g["name"] for g in sorted(artist_genres.values(), key=lambda g: -g["score"])][:8]
     return info
 
 
@@ -245,6 +307,8 @@ def enrich(title, channel=""):
     _add_genres(genres, mb_release_group_genres(main, track["title"], alb_info.get("title")), "MusicBrainz (album)")
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
     _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (morceau)")
+    album_genres = [{"name": g["name"], "sources": g["sources"]}
+                    for g in sorted(genres.values(), key=lambda g: -g["score"])][:8]
     for a in artist_details:
         _add_genres(genres, a["genres"], f"MusicBrainz ({a['name']})")
         _add_genres(genres, a["audiodb_genres"], f"TheAudioDB ({a['name']})")
@@ -255,6 +319,9 @@ def enrich(title, channel=""):
         "found": True,
         "track": track.get("title"),
         "album": alb_info.get("title"),
+        "album_id": alb_info.get("id") or track["album"].get("id"),
+        "album_artist": (album.get("artist") or {}).get("name") or main,
+        "album_genres": album_genres,
         "record_type": album.get("record_type"),
         "cover": alb_info.get("cover_xl") or alb_info.get("cover_big"),
         "release_date": album.get("release_date") or full_track.get("release_date"),

@@ -48,66 +48,111 @@
            border: 1px solid #6b2233; color: #ffb3c0; display: none; }
 
   .results { margin-top: 32px; display: none; }
-  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-             flex-wrap: wrap; margin-bottom: 14px; }
-  .pl-title { font-size: 18px; font-weight: 600; margin: 0; }
-  .count { color: var(--muted); font-size: 13px; margin-top: 2px; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-           padding: 9px 14px; font-size: 13px; font-weight: 500; }
+           padding: 9px 14px; font-size: 13px; font-weight: 500; text-decoration: none; display: inline-flex;
+           align-items: center; gap: 6px; border-radius: 12px; }
   .ghost:hover { border-color: #4a4a5c; background: #262632; }
-  select.ghost { font: inherit; font-size: 13px; border-radius: 12px; cursor: pointer; outline: 0; }
+  .ghost.sm { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+  .muted { color: var(--muted); }
 
-  .list { display: flex; flex-direction: column; gap: 8px; }
-  .row {
-    display: grid; grid-template-columns: 28px 72px 1fr auto; align-items: start; gap: 14px;
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
-    transition: .15s;
-  }
-  .row:hover { border-color: #3d3d4d; transform: translateY(-1px); }
-  .num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; padding-top: 4px; }
-  .cover { width: 72px; height: 72px; border-radius: 10px; background: var(--panel-2); object-fit: cover;
-           border: 1px solid var(--border); display: block; }
-  .cover.loading { background: linear-gradient(90deg, var(--panel-2), #2a2a36, var(--panel-2));
-                   background-size: 200% 100%; animation: shimmer 1.2s infinite; }
-  @keyframes shimmer { to { background-position: -200% 0; } }
-  .info { margin-top: 8px; font-size: 13px; color: #c9c9d6; display: flex; flex-direction: column; gap: 5px; }
-  .info .muted { color: var(--muted); }
-  .artists { display: flex; flex-wrap: wrap; gap: 6px; }
-  .artist { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
-            padding: 2px 10px; font-size: 12.5px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  /* En-tête de la playlist */
+  .pl { display: grid; grid-template-columns: auto 1fr; gap: 20px; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 18px; padding: 18px; }
+  .pl-imgs { display: flex; flex-direction: column; gap: 8px; }
+  .pl-main { width: 220px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; background: var(--panel-2);
+             border: 1px solid var(--border); display: block; }
+  .pl-thumbs { display: flex; gap: 6px; }
+  .pl-thumbs img { width: 50px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; cursor: pointer;
+                   border: 1px solid var(--border); opacity: .7; }
+  .pl-thumbs img:hover, .pl-thumbs img.on { opacity: 1; border-color: var(--accent); }
+  .pl-title { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .count { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .progress { height: 3px; border-radius: 3px; background: var(--panel-2); margin-top: 14px; overflow: hidden; }
+  .progress div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+  .progress-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* Sections */
+  details.sec { margin-top: 28px; }
+  details.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px;
+                          font-size: 16px; font-weight: 600; margin-bottom: 12px; user-select: none; }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec > summary::before { content: "▸"; color: var(--muted); transition: .15s; }
+  details.sec[open] > summary::before { transform: rotate(90deg); }
+  .badge { font-size: 12px; font-weight: 500; color: var(--muted); background: var(--panel-2);
+           border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  /* Artistes */
+  .artists-list { display: flex; flex-direction: column; gap: 12px; }
+  .acard { display: grid; grid-template-columns: 140px 1fr; gap: 18px; background: var(--panel);
+           border: 1px solid var(--border); border-radius: 16px; padding: 16px; scroll-margin-top: 20px; }
+  .acard.flash, .alb.flash { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,59,92,.15); }
+  .a-main { width: 140px; height: 140px; border-radius: 12px; object-fit: cover; background: var(--panel-2);
+            border: 1px solid var(--border); display: block; }
+  .a-name { font-size: 18px; font-weight: 700; margin: 0; }
+  .a-meta { font-size: 13px; color: #c9c9d6; margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; color: #ffd0b8;
           background: rgba(255,122,69,.12); border: 1px solid rgba(255,122,69,.3); }
-  .btns { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
-  .gallery { grid-column: 3 / -1; display: none; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
-  .gallery.open { display: flex; }
-  .gal-artist { font-size: 12px; color: var(--muted); width: 100%; margin-bottom: -6px; }
-  .shot { position: relative; width: 140px; }
-  .shot img { width: 140px; height: 140px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); display: block; }
-  .shot a { position: absolute; right: 6px; top: 112px; background: rgba(0,0,0,.7); color: white;
-            border-radius: 8px; padding: 3px 7px; font-size: 11px; text-decoration: none; }
-  .shot a:hover { background: var(--accent); }
-  .shot a.zoom { right: auto; left: 6px; }
-  .shot .src { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
-  .progress { height: 3px; border-radius: 3px; background: var(--panel-2); margin: -4px 0 14px; overflow: hidden; }
-  .progress div { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+  .desc { margin-top: 10px; font-size: 13.5px; line-height: 1.55; color: #d6d6e0; white-space: pre-line;
+          display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .desc.open { display: block; }
+  .desc-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 12px; }
+  .tab { background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 999px;
+         padding: 2px 9px; font-size: 11.5px; }
+  .tab.on { color: var(--text); border-color: var(--accent); }
+  .more { background: none; color: var(--accent-2); padding: 0; font-size: 12px; }
+  .links { display: flex; gap: 10px; margin-left: auto; }
+  .links a { color: var(--muted); font-size: 12px; }
+  .links a:hover { color: var(--accent-2); }
+  .strip { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .strip .shot { position: relative; flex: none; }
+  .strip img { width: 76px; height: 76px; object-fit: cover; border-radius: 10px; cursor: pointer; display: block;
+               border: 2px solid transparent; }
+  .strip .shot.on img { border-color: var(--accent); }
+  .strip .src { font-size: 10px; color: var(--muted); text-align: center; margin-top: 2px; max-width: 76px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip a { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.72); color: white; border-radius: 6px;
+             font-size: 10.5px; padding: 1px 5px; text-decoration: none; opacity: 0; transition: .15s; }
+  .strip .shot:hover a { opacity: 1; }
+  .strip a.zoom { right: auto; left: 4px; }
+
+  /* Albums */
+  .albums { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .alb { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 12px;
+         display: flex; flex-direction: column; gap: 6px; scroll-margin-top: 20px; }
+  .alb-cover { position: relative; }
+  .alb-cover img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; display: block;
+                   background: var(--panel-2); }
+  .alb-cover a { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.72); color: white;
+                 border-radius: 8px; padding: 4px 9px; font-size: 12px; text-decoration: none; }
+  .alb-cover a:hover { background: var(--accent); }
+  .alb-title { font-weight: 600; font-size: 14px; line-height: 1.3; }
+  .alb-sub { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  /* Morceaux */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .row { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start;
+         background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; }
+  .row:hover { border-color: #3d3d4d; }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; padding-top: 3px; }
   .meta { min-width: 0; }
   .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .line + .line { margin-top: 3px; }
+  .line + .line { margin-top: 2px; }
   .title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  .link { font-size: 12.5px; color: var(--muted); text-decoration: none; display: block;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .link { font-size: 12.5px; color: var(--muted); text-decoration: none; white-space: nowrap; overflow: hidden;
+          text-overflow: ellipsis; min-width: 0; }
+  .link:hover { color: var(--accent-2); }
   .ic { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
         background: transparent; color: var(--muted); border-radius: 7px; }
   .ic:hover { background: var(--panel-2); color: var(--text); }
   .ic.done { color: var(--ok); }
-  .link:hover { color: var(--accent-2); }
-  .copy { background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-          padding: 7px 12px; font-size: 12.5px; text-align: center; text-decoration: none; border-radius: 12px; }
-  .copy[hidden] { display: none; }
-  .copy:hover { border-color: var(--accent); }
-  .copy.done { border-color: var(--ok); color: var(--ok); }
+  .info { margin-top: 6px; font-size: 12.5px; color: #c9c9d6; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+  .jump { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 999px;
+          padding: 1px 9px; font-size: 12px; }
+  .jump:hover { border-color: var(--accent); }
+  .jump.alb-j { border-radius: 8px; color: #c9c9d6; }
 
   .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: white;
              border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: -3px; }
@@ -120,9 +165,10 @@
 
   @media (max-width: 560px) {
     form { flex-direction: column; } .primary { padding: 12px; }
-    .row { grid-template-columns: 56px 1fr; } .num { display: none; }
-    .cover { width: 56px; height: 56px; } .btns { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
-    .gallery { grid-column: 1 / -1; }
+    .pl { grid-template-columns: 1fr; } .pl-main { width: 100%; }
+    .acard { grid-template-columns: 84px 1fr; gap: 12px; } .a-main { width: 84px; height: 84px; }
+    .albums { grid-template-columns: repeat(2, 1fr); }
+    .row { grid-template-columns: 1fr; } .num { display: none; }
   }
 </style>
 </head>
@@ -134,7 +180,7 @@
     </div>
     <div>
       <h1>Extracteur de playlist</h1>
-      <p class="sub">Colle un lien de playlist YouTube : titres, liens, covers, artistes, albums, labels et genres.</p>
+      <p class="sub">Colle un lien de playlist YouTube : titres, liens, artistes, albums, covers, labels et genres.</p>
     </div>
   </header>
 
@@ -146,19 +192,35 @@
   <div class="error" id="error"></div>
 
   <section class="results" id="results">
-    <div class="toolbar">
+    <div class="pl">
+      <div class="pl-imgs" id="plImgs"></div>
       <div>
         <p class="pl-title" id="plTitle"></p>
         <div class="count" id="count"></div>
-      </div>
-      <div class="actions">
-        <button class="ghost" id="copyTitles">Copier tous les titres</button>
-        <button class="ghost" id="copyLinks">Copier tous les liens</button>
-        <button class="ghost" id="csv">Exporter tout (.csv)</button>
+        <div class="actions">
+          <button class="ghost" id="copyTitles">Copier tous les titres</button>
+          <button class="ghost" id="copyLinks">Copier tous les liens</button>
+          <button class="ghost" id="csv">Exporter tout (.csv)</button>
+        </div>
+        <div class="progress"><div id="bar"></div></div>
+        <div class="progress-label" id="barLabel"></div>
       </div>
     </div>
-    <div class="progress" title="Recherche des infos d'album"><div id="bar"></div></div>
-    <div class="list" id="list"></div>
+
+    <details class="sec" open>
+      <summary>Artistes <span class="badge" id="nArtists">0</span></summary>
+      <div class="artists-list" id="artists"><div class="empty">Recherche en cours…</div></div>
+    </details>
+
+    <details class="sec" open>
+      <summary>Albums <span class="badge" id="nAlbums">0</span></summary>
+      <div class="albums" id="albums"><div class="empty">Recherche en cours…</div></div>
+    </details>
+
+    <details class="sec" open>
+      <summary>Morceaux <span class="badge" id="nTracks">0</span></summary>
+      <div class="list" id="list"></div>
+    </details>
   </section>
 </div>
 <div class="toast" id="toast">Copié !</div>
@@ -166,8 +228,10 @@
 <script>
 const $ = id => document.getElementById(id);
 let data = null, runId = 0;
+let artists = new Map(), albums = new Map();   // infos regroupées, par nom d'artiste / par album
 const regionFr = (() => { try { return new Intl.DisplayNames(["fr"], { type: "region" }); } catch { return null; } })();
-
+const ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 
 async function copy(text) {
   try { await navigator.clipboard.writeText(text); }
@@ -186,6 +250,8 @@ function toast(msg) {
 function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
 const fileSafe = s => (s || "image").replace(/[\\/:*?"<>|]/g, "_");
 const dl = (url, name) => `/api/image?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileSafe(name))}`;
+const slug = s => "k" + [...(s || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+const plural = (n, w) => `${n} ${w}${n > 1 ? (w.endsWith("eau") ? "x" : "s") : ""}`;
 
 function flag(cc) {
   if (!cc || cc.length !== 2) return "";
@@ -201,80 +267,143 @@ function frDate(d) {
   return m && j ? new Date(+y, m - 1, +j).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : y;
 }
 
-function render() {
+/* ---------- En-tête playlist ---------- */
+function renderPlaylist() {
   $("plTitle").textContent = data.title;
-  $("count").textContent = `${data.count} vidéo${data.count > 1 ? "s" : ""}`;
+  $("count").textContent = [plural(data.count, "vidéo"), data.owner && `par ${data.owner}`].filter(Boolean).join(" · ");
+  const th = data.thumbnails || [];
+  $("plImgs").innerHTML = th.length ? `
+    <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="">
+    <div class="pl-thumbs">
+      ${th.length > 1 ? th.map((u, k) => `<img src="${esc(u)}" data-u="${esc(u)}" class="${k ? "" : "on"}" alt="">`).join("") : ""}
+      <a class="ghost sm" id="plDl" href="${dl(th[0], data.title)}">⬇</a>
+    </div>` : "";
+}
+$("plImgs").addEventListener("click", e => {
+  const im = e.target.closest(".pl-thumbs img"); if (!im) return;
+  $("plMain").src = im.dataset.u; $("plDl").href = dl(im.dataset.u, data.title);
+  $("plImgs").querySelectorAll(".pl-thumbs img").forEach(x => x.classList.toggle("on", x === im));
+});
+
+/* ---------- Morceaux ---------- */
+function renderTracks() {
+  $("nTracks").textContent = data.count;
   $("list").innerHTML = data.videos.map((v, i) => `
     <div class="row" id="row${i}">
       <div class="num">${i + 1}</div>
-      <div class="cover loading"></div>
       <div class="meta">
         <div class="line"><div class="title" title="${esc(v.title)}">${esc(v.title)}</div>
-          <button class="ic" data-act="copy" data-field="title" data-i="${i}" title="Copier le titre"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+          <button class="ic" data-copy="title" data-i="${i}" title="Copier le titre">${ICON}</button></div>
         <div class="line"><a class="link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a>
-          <button class="ic" data-act="copy" data-field="url" data-i="${i}" title="Copier le lien"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+          <button class="ic" data-copy="url" data-i="${i}" title="Copier le lien">${ICON}</button></div>
         <div class="info"><span class="muted">Recherche des infos…</span></div>
       </div>
-      <div class="btns">
-        <a class="copy" data-act="cover" hidden>Cover ⬇</a>
-        <button class="copy" data-act="gal" data-i="${i}" hidden>Photos artiste</button>
-      </div>
-      <div class="gallery"></div>
     </div>`).join("");
-  $("results").style.display = "block";
+}
+function renderTrackInfo(i) {
+  const e = data.videos[i].meta, info = $("row" + i).querySelector(".info");
+  if (!e?.found) { info.innerHTML = `<span class="muted">Infos introuvables pour ce morceau.</span>`; return; }
+  const year = (e.release_date || "").slice(0, 4);
+  info.innerHTML = e.artists.map(a => `<button class="jump" data-jump="${slug("a" + a.name)}">${esc(a.name)}</button>`).join("")
+    + (e.album ? `<button class="jump alb-j" data-jump="${albumKey(e)}">💿 ${esc(e.album)}${year && year !== "0000" ? ` · ${year}` : ""}</button>` : "");
 }
 
-function renderInfo(i) {
-  const v = data.videos[i], e = v.meta, row = $("row" + i);
-  const coverEl = row.querySelector(".cover"), info = row.querySelector(".info");
-  if (!e || !e.found) {
-    coverEl.classList.remove("loading");
-    info.innerHTML = `<span class="muted">Infos introuvables pour ce morceau.</span>`;
-    return;
+/* ---------- Artistes (une fiche par artiste) ---------- */
+function addArtist(a, trackIdx) {
+  const key = slug("a" + a.name);
+  let entry = artists.get(key);
+  if (!entry) {
+    entry = { ...a, key, tracks: new Set(), img: 0, desc: 0, open: false };
+    artists.set(key, entry);
+    if (artists.size === 1) $("artists").innerHTML = "";
+    const el = document.createElement("div");
+    el.className = "acard"; el.id = key;
+    $("artists").appendChild(el);
+    $("nArtists").textContent = artists.size;
   }
-  if (e.cover) {
-    const img = document.createElement("img");
-    img.className = "cover"; img.src = e.cover; img.alt = e.album || ""; img.loading = "lazy";
-    coverEl.replaceWith(img);
-    const a = row.querySelector('[data-act="cover"]');
-    a.href = dl(e.cover, `${e.artists[0]?.name || ""} - ${e.album || "cover"}`); a.hidden = false;
-  } else coverEl.classList.remove("loading");
-
-  const artists = e.artists.map(a => {
-    const c = countryName(a);
-    return `<span class="artist">${esc(a.name)}${c ? ` <span class="muted">· ${esc(c)}</span>` : ""}</span>`;
-  }).join("");
-  const album = [
-    e.album && `💿 ${esc(e.album)}${e.record_type && e.record_type !== "album" ? ` <span class="muted">(${esc(e.record_type)})</span>` : ""}`,
-    e.release_date && `📅 ${esc(frDate(e.release_date))}`,
-    e.label && `🏷️ ${esc(e.label)}`,
-  ].filter(Boolean).join(' <span class="muted">·</span> ');
-  info.innerHTML = `
-    <div class="artists">${artists}</div>
-    ${album ? `<div>${album}</div>` : ""}
-    ${e.genres?.length ? `<div class="chips">${e.genres.map(g => `<span class="chip" title="Source : ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
-
-  const gal = row.querySelector(".gallery");
-  const blocks = e.artists.filter(a => a.images?.length).map(a =>
-    `<div class="gal-artist">${esc(a.name)}</div>` + a.images.map((im, k) => `
-      <div class="shot">
-        <img src="${esc(im.url)}" alt="${esc(a.name)}" loading="lazy" onerror="this.closest('.shot').remove()">
-        <a href="${esc(im.url)}" target="_blank" rel="noopener" class="zoom" title="Voir en grand">⤢</a>
+  entry.tracks.add(trackIdx);
+  drawArtist(entry);
+}
+function drawArtist(a) {
+  const el = $(a.key), imgs = a.images || [], main = imgs[a.img];
+  const d = (a.descriptions || [])[a.desc];
+  const genres = a.all_genres?.length ? a.all_genres : a.genres || [];
+  const links = Object.entries(a.links || {}).filter(([, u]) => u);
+  el.innerHTML = `
+    ${main ? `<img class="a-main" src="${esc(main.url)}" alt="${esc(a.name)}">` : `<div class="a-main"></div>`}
+    <div style="min-width:0">
+      <p class="a-name">${esc(a.name)}</p>
+      <div class="a-meta">
+        ${countryName(a) ? `<span>${esc(countryName(a))}</span>` : ""}
+        <span class="muted">${plural(a.tracks.size, "morceau")} dans la playlist</span>
+      </div>
+      ${genres.length ? `<div class="chips">${genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}</div>` : ""}
+      ${d ? `<div class="desc ${a.open ? "open" : ""}">${esc(d.text)}</div>` : ""}
+      <div class="desc-bar">
+        ${d ? `<button class="more" data-more="${a.key}">${a.open ? "Réduire" : "Lire la suite"}</button>` : `<span class="muted">Pas de description trouvée.</span>`}
+        ${(a.descriptions || []).length > 1 ? a.descriptions.map((x, k) =>
+          `<button class="tab ${k === a.desc ? "on" : ""}" data-desc="${a.key}" data-k="${k}">${esc(x.source)}</button>`).join("") : d ? `<span class="muted">· ${esc(d.source)}</span>` : ""}
+        <span class="links">${links.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`).join("")}</span>
+      </div>
+    </div>
+    ${imgs.length ? `<div class="strip">${imgs.map((im, k) => `
+      <div class="shot ${k === a.img ? "on" : ""}" title="${esc(im.source)}">
+        <img src="${esc(im.url)}" data-pick="${a.key}" data-k="${k}" loading="lazy" alt="" onerror="this.closest('.shot').remove()">
+        <a class="zoom" href="${esc(im.url)}" target="_blank" rel="noopener" title="Voir en grand">⤢</a>
         <a href="${dl(im.url, `${a.name} ${k + 1}`)}" title="Télécharger">⬇</a>
         <div class="src">${esc(im.source)}</div>
-      </div>`).join(""));
-  const nb = e.artists.reduce((n, a) => n + (a.images?.length || 0), 0);
-  if (blocks.length) {
-    gal.innerHTML = blocks.join("");
-    const gb = row.querySelector('[data-act="gal"]');
-    gb.dataset.label = `Photos artiste (${nb})`; gb.textContent = gb.dataset.label; gb.hidden = false;
+      </div>`).join("")}</div>` : ""}`;
+}
+$("artists").addEventListener("click", e => {
+  const t = e.target, a = artists.get(t.dataset.more || t.dataset.desc || t.dataset.pick);
+  if (!a) return;
+  if (t.dataset.more) a.open = !a.open;
+  if (t.dataset.desc) { a.desc = +t.dataset.k; a.open = false; }
+  if (t.dataset.pick) a.img = +t.dataset.k;
+  drawArtist(a);
+});
+
+/* ---------- Albums (une fiche par album) ---------- */
+const albumKey = e => slug("b" + (e.album_id || `${e.album_artist}|${e.album}`));
+function addAlbum(e, trackIdx) {
+  if (!e.album) return;
+  const key = albumKey(e);
+  let entry = albums.get(key);
+  if (!entry) {
+    entry = { key, tracks: new Set(), title: e.album, artist: e.album_artist, cover: e.cover, date: e.release_date,
+              label: e.label, type: e.record_type, genres: e.album_genres || [] };
+    albums.set(key, entry);
+    if (albums.size === 1) $("albums").innerHTML = "";
+    const el = document.createElement("div");
+    el.className = "alb"; el.id = key; $("albums").appendChild(el);
+    $("nAlbums").textContent = albums.size;
   }
+  entry.tracks.add(trackIdx);
+  const types = { album: "Album", single: "Single", ep: "EP", compile: "Compilation" };
+  $(key).innerHTML = `
+    <div class="alb-cover">
+      ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy"><a href="${dl(entry.cover, `${entry.artist} - ${entry.title}`)}" title="Télécharger la cover">⬇ Cover</a>` : `<img alt="">`}
+    </div>
+    <div class="alb-title">${esc(entry.title)}</div>
+    <div class="alb-sub">
+      ${esc(entry.artist || "")}${entry.type ? ` · ${esc(types[entry.type] || entry.type)}` : ""}<br>
+      ${entry.date ? `📅 ${esc(frDate(entry.date))}<br>` : ""}
+      ${entry.label ? `🏷️ ${esc(entry.label)}<br>` : ""}
+      <span>${plural(entry.tracks.size, "morceau")} dans la playlist</span>
+    </div>
+    ${entry.genres.length ? `<div class="chips" style="margin-top:2px">${entry.genres.map(g =>
+      `<span class="chip" title="Source : ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
 }
 
+/* ---------- Chargement progressif ---------- */
 async function enrichAll(id) {
   let next = 0, done = 0;
   const total = data.videos.length;
-  $("bar").style.width = "0";
+  const progress = () => {
+    $("bar").style.width = `${(done / total) * 100}%`;
+    $("barLabel").textContent = done < total ? `Recherche des infos : ${done} / ${total} morceaux…` : "Toutes les infos sont chargées.";
+  };
+  progress();
   async function worker() {
     while (next < total && id === runId) {
       const i = next++, v = data.videos[i];
@@ -284,24 +413,36 @@ async function enrichAll(id) {
         v.meta = await r.json();
       } catch { v.meta = { found: false }; }
       if (id !== runId) return;
-      renderInfo(i);
-      $("bar").style.width = `${(++done / total) * 100}%`;
+      if (v.meta.found) {
+        v.meta.artists.forEach(a => addArtist(a, i));
+        addAlbum(v.meta, i);
+      }
+      renderTrackInfo(i);
+      done++; progress();
     }
   }
   await Promise.all([1, 2, 3, 4].map(worker));
+  if (id === runId) {
+    if (!artists.size) $("artists").innerHTML = `<div class="empty">Aucun artiste trouvé.</div>`;
+    if (!albums.size) $("albums").innerHTML = `<div class="empty">Aucun album trouvé.</div>`;
+  }
 }
 
-$("list").addEventListener("click", e => {
-  const b = e.target.closest("[data-act]"); if (!b) return;
-  if (b.dataset.act === "copy") {
-    const icon = b.innerHTML;
-    copy(data.videos[b.dataset.i][b.dataset.field]);
-    b.classList.add("done"); b.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-    setTimeout(() => { b.classList.remove("done"); b.innerHTML = icon; }, 1500);
-  } else if (b.dataset.act === "gal") {
-    const g = b.closest(".row").querySelector(".gallery");
-    g.classList.toggle("open");
-    b.textContent = g.classList.contains("open") ? "Masquer photos" : b.dataset.label;
+$("results").addEventListener("click", e => {
+  const c = e.target.closest("[data-copy]");
+  if (c) {
+    const icon = c.innerHTML;
+    copy(data.videos[c.dataset.i][c.dataset.copy]);
+    c.classList.add("done"); c.innerHTML = CHECK;
+    setTimeout(() => { c.classList.remove("done"); c.innerHTML = icon; }, 1500);
+    return;
+  }
+  const j = e.target.closest("[data-jump]");
+  if (j && $(j.dataset.jump)) {
+    const el = $(j.dataset.jump);
+    el.closest("details").open = true;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600);
   }
 });
 
@@ -313,7 +454,6 @@ function save(text, name, type) {
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name; a.click(); URL.revokeObjectURL(a.href);
 }
-
 $("csv").onclick = () => {
   if (!data) return;
   const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
@@ -340,7 +480,11 @@ $("form").onsubmit = async e => {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || "Erreur inconnue");
-    data = j; render();
+    data = j; artists = new Map(); albums = new Map();
+    $("artists").innerHTML = $("albums").innerHTML = `<div class="empty">Recherche en cours…</div>`;
+    $("nArtists").textContent = $("nAlbums").textContent = "0";
+    renderPlaylist(); renderTracks();
+    $("results").style.display = "block";
     enrichAll(id);
   } catch (err) {
     $("error").textContent = err.message; $("error").style.display = "block";
