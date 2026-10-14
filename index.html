@@ -21,6 +21,15 @@
   }
   .wrap { max-width: 920px; margin: 0 auto; padding: 48px 20px 80px; }
   header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+  /* Landing: before the first extraction, the title and link field sit in the middle of the screen. */
+  .hero { transition: padding .4s ease; }
+  body.landing .wrap { padding-top: 0; padding-bottom: 0; }
+  body.landing .hero { min-height: calc(100vh - 60px); display: flex; flex-direction: column; justify-content: center;
+                       align-items: center; text-align: center; }
+  body.landing header { flex-direction: column; gap: 16px; margin-bottom: 32px; }
+  body.landing .logo { width: 64px; height: 64px; border-radius: 18px; }
+  body.landing h1 { font-size: 34px; }
+  body.landing form { width: 100%; max-width: 640px; }
   .logo {
     width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
     background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -179,8 +188,9 @@
   }
 </style>
 </head>
-<body>
+<body class="landing">
 <div class="wrap">
+  <div class="hero">
   <header>
     <div class="logo">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm14-4v8.2a3 3 0 1 0 2 2.8V12h3v-2z"/></svg>
@@ -192,11 +202,12 @@
   </header>
 
   <form id="form">
-    <input id="url" type="url" required autocomplete="off"
+    <input id="url" type="url" required autocomplete="off" autofocus
            placeholder="https://www.youtube.com/playlist?list=...">
     <button class="primary" id="go" type="submit">Extract</button>
   </form>
   <div class="error" id="error"></div>
+  </div>
 
   <section class="results" id="results">
     <div class="pl">
@@ -502,6 +513,7 @@ $("form").onsubmit = async e => {
     $("artists").innerHTML = $("albums").innerHTML = `<div class="empty">Searching…</div>`;
     $("nArtists").textContent = $("nAlbums").textContent = "0";
     renderPlaylist(); renderTracks();
+    document.body.classList.remove("landing");
     $("results").style.display = "block";
     enrichAll(id);
   } catch (err) {
