@@ -8,7 +8,7 @@ It also looks up the music info for every track and groups everything that repea
 - **Artists**: one card per artist, with every photo found (Genius, Deezer, TheAudioDB, Wikimedia) so you can pick and download your favourite, their description (Genius, with Wikipedia as a complement or fallback), country of origin, genres, and how many of their tracks are in the playlist.
 - **Albums**: one card per album, with the cover (downloadable), release date, label and genres.
 - **Tracks**: title and link (copyable), BPM and key, with shortcuts to the artist and album cards.
-- **Built-in player**: click ▶ next to a track to listen without leaving the app. A bar at the bottom has play/pause (or the space bar), previous/next, a progress bar and volume, and the video plays in a small box you can enlarge. The next track starts automatically. A few videos can't be played outside YouTube; the box then offers a link to open them there.
+- **Built-in player**: click the big ▶ next to the playlist name to play it from the first track, or ▶ next to a track to listen without leaving the app. A bar at the bottom has play/pause (or the space bar), previous/next, a progress bar and volume, and the video plays in a small box you can enlarge. The next track starts automatically. A few videos can't be played outside YouTube; the box then offers a link to open them there.
 
 "Export all (.csv)" puts everything in a file that opens in Excel.
 

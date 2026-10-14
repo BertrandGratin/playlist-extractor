@@ -76,7 +76,14 @@
   .ghost.sm { padding: 3px 9px; font-size: 13px; }
 
   /* Playlist header */
-  .pl { display: grid; grid-template-columns: auto 1fr; gap: 20px; padding: 14px; }
+  .pl { display: grid; grid-template-columns: auto 1fr auto; gap: 20px; padding: 14px; }
+  .pl-play { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 8px; margin-right: 10px;
+             background: none; border: 0; color: #cfcfcf; cursor: pointer; font-family: var(--serif); font-weight: 700; font-size: 14px; padding: 0; }
+  .pl-play .disc { width: 84px; height: 84px; border-radius: 50%; background: #fff; color: #000; display: flex;
+                   align-items: center; justify-content: center; transition: transform .15s, background .15s; }
+  .pl-play .disc svg { width: 38px; height: 38px; }
+  .pl-play:hover .disc { background: var(--magenta); color: #fff; transform: scale(1.06); }
+  .pl-play:hover { color: #fff; }
   .pl-imgs { display: flex; flex-direction: column; gap: 6px; }
   .pl-main { width: 240px; aspect-ratio: 16 / 9; object-fit: cover; background: var(--panel-2); display: block; }
   .pl-thumbs { display: flex; gap: 4px; align-items: center; }
@@ -266,7 +273,7 @@
   @media (max-width: 560px) {
     body.landing h1 { font-size: 40px; }
     form, body.landing form { flex-direction: column; } .primary { padding: 10px; border-left: 0; border-top: 1px solid var(--border-2); }
-    .pl { grid-template-columns: 1fr; } .pl-main { width: 100%; } .pl-title { font-size: 28px; }
+    .pl { grid-template-columns: 1fr; } .pl-main { width: 100%; } .pl-play { flex-direction: row; justify-self: start; } .pl-play .disc { width: 56px; height: 56px; } .pl-play .disc svg { width: 26px; height: 26px; } .pl-title { font-size: 28px; }
     .acard { grid-template-columns: 90px 1fr; gap: 12px; } .a-main { width: 90px; height: 90px; } .a-name { font-size: 26px; }
     .albums { grid-template-columns: repeat(2, 1fr); }
   }
@@ -307,6 +314,7 @@
         <div class="progress"><div id="bar"></div></div>
         <div class="progress-label" id="barLabel"></div>
       </div>
+      <button class="pl-play" id="playAll" title="Play the playlist from the first track"><span class="disc" id="playAllIcon"></span><span id="playAllLabel">Play all</span></button>
     </div>
 
     <details class="sec" open>
@@ -693,7 +701,7 @@ function loadYT() {
           onReady: () => { player.ready = true; player.yt.setVolume(+$("pVol").value); resolve(); },
           onStateChange: ev => {
             player.playing = ev.data === YT.PlayerState.PLAYING || ev.data === YT.PlayerState.BUFFERING;
-            $("pPlay").innerHTML = player.playing ? PAUSE : PLAY;
+            $("pPlay").innerHTML = player.playing ? PAUSE : PLAY; syncPlayAll();
             if (ev.data === YT.PlayerState.ENDED) next(true);
           },
           onError: ev => {  // 101/150: the owner doesn't allow embedding; 100: removed or private
@@ -752,6 +760,16 @@ $("list").addEventListener("click", ev => {
   i === player.i && player.ready ? togglePlay() : playTrack(i);
 });
 $("pPlay").onclick = togglePlay;
+$("playAllIcon").innerHTML = PLAY;
+$("playAll").onclick = () => {
+  if (player.i >= 0 && player.ready) return togglePlay();  // already listening: pause / resume
+  player.i = -1; next();
+};
+function syncPlayAll() {
+  const on = player.i >= 0 && player.playing;
+  $("playAllIcon").innerHTML = on ? PAUSE : PLAY;
+  $("playAllLabel").textContent = on ? "Pause" : player.i >= 0 ? "Resume" : "Play all";
+}
 $("pNext").onclick = () => next();
 $("pPrev").onclick = prev;
 $("pSeek").oninput = () => { player.seeking = true; if (player.ready) $("pCur").textContent = fmt(player.yt.getDuration() * $("pSeek").value / 1000); };
@@ -760,7 +778,7 @@ $("pVol").oninput = () => player.ready && player.yt.setVolume(+$("pVol").value);
 $("pBig").onclick = () => $("pBig").classList.toggle("on", document.body.classList.toggle("video-big"));
 $("pClose").onclick = () => {
   if (player.ready) player.yt.stopVideo();
-  clearInterval(player.timer); player.i = -1;
+  clearInterval(player.timer); player.i = -1; player.playing = false; syncPlayAll();
   document.body.classList.remove("has-player", "video-big");
   document.querySelectorAll(".row.playing").forEach(r => r.classList.remove("playing"));
 };
