@@ -185,6 +185,15 @@
   .conf.hi { color: var(--green); }
   .conf.mid { color: var(--muted); }
   .conf.lo { color: var(--orange); }
+  .tipbox { position: fixed; z-index: 50; width: 270px; padding: 12px 14px; background: #161616; color: var(--text);
+            border: 1px solid #333; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.6); font-size: 12.5px;
+            line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .12s; }
+  .tipbox.on { opacity: 1; }
+  .tipbox p { margin: 2px 0 8px; color: var(--muted); }
+  .tipbox p:last-child { margin-bottom: 0; }
+  .tip-h { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; }
+  .tip-h.hi { color: var(--green); } .tip-h.mid { color: var(--text); } .tip-h.lo { color: var(--orange); }
+  .tip-l { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
   .lbl { display: none; }
   .wait { color: var(--dim); }
 
@@ -357,23 +366,38 @@ function renderTracks() {
       <div class="cell c-key"></div>
     </div>`).join("");
 }
-function confMark(level) {
-  if (level === "high") return `<span class="conf hi">✓</span>`;
-  if (level === "medium") return `<span class="conf mid">?</span>`;
-  if (level === "low") return `<span class="conf lo">?</span>`;
-  return "";
-}
-function confTip(what, level, sources, alts) {
-  const words = { high: "high (sources agree)", medium: "medium, double-check by ear", low: "low, likely wrong, double-check by ear" };
-  let t = `${what} · confidence: ${words[level] || "unknown"}`;
-  if (sources?.length) t += `\nSources: ${sources.join(" + ")}`;
-  if (alts?.length) t += `\nOther candidates: ${alts.join(", ")}`;
-  return t;
+const CONF_TEXT = {
+  high: ["✓", "hi", "Confirmed", "Independent sources agree on this value, so it is very likely right."],
+  medium: ["?", "mid", "Probably right", "The audio analysis is fairly sure, but no other source fully confirms it (sometimes only by half or double tempo). Worth a quick check by ear."],
+  low: ["?", "lo", "Uncertain", "The sources disagree or the analysis is unsure. Check it by ear before relying on it."],
+};
+function confMark(what, level, sources, alts) {
+  const c = CONF_TEXT[level];
+  if (!c) return "";
+  let tip = `<div class="tip-h ${c[1]}">${c[0]} ${esc(c[2])}</div><p>${esc(c[3])}</p>`;
+  if (sources?.length) tip += `<div class="tip-l">Sources</div><p>${sources.map(esc).join(" + ")}</p>`;
+  if (alts?.length) tip += `<div class="tip-l">Other possible ${esc(what)}</div><p>${alts.map(esc).join(", ")}</p>`;
+  return `<span class="conf ${c[1]}" tabindex="0" data-tip="${esc(tip)}">${c[0]}</span>`;
 }
 function renderAudio(e, cell) {
-  cell("bpm").innerHTML = e.bpm ? `<span class="grp" title="${esc(confTip("BPM", e.bpm_confidence, e.bpm_sources, e.bpm_alternatives))}"><span class="lbl">BPM</span>${e.bpm}${confMark(e.bpm_confidence)}${copyBtn(e.bpm, "BPM")}</span>` : `<span class="wait">–</span>`;
-  cell("key").innerHTML = e.key ? `<span class="grp" title="${esc(confTip(`Key (Camelot ${e.camelot || "?"})`, e.key_confidence, e.key_sources, e.key_alternatives))}"><span class="lbl">Key</span>${esc(e.key)}${e.camelot ? `&nbsp;<span class="cam">${esc(e.camelot)}</span>` : ""}${confMark(e.key_confidence)}${copyBtn(e.key, "key")}</span>` : `<span class="wait">–</span>`;
+  cell("bpm").innerHTML = e.bpm ? `<span class="grp"><span class="lbl">BPM</span>${e.bpm}${confMark("BPM", e.bpm_confidence, e.bpm_sources, e.bpm_alternatives)}${copyBtn(e.bpm, "BPM")}</span>` : `<span class="wait">–</span>`;
+  cell("key").innerHTML = e.key ? `<span class="grp"><span class="lbl">Key</span>${esc(e.key)}${e.camelot ? `&nbsp;<span class="cam" title="Camelot notation">${esc(e.camelot)}</span>` : ""}${confMark("keys", e.key_confidence, e.key_sources, e.key_alternatives)}${copyBtn(e.key, "key")}</span>` : `<span class="wait">–</span>`;
 }
+/* Explanation box shown when hovering (or tapping) a ✓ / ? mark. */
+const tipBox = document.createElement("div");
+tipBox.className = "tipbox"; document.body.appendChild(tipBox);
+function showTip(el) {
+  tipBox.innerHTML = el.dataset.tip; tipBox.classList.add("on");
+  const r = el.getBoundingClientRect(), w = tipBox.offsetWidth, h = tipBox.offsetHeight;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const top = r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8;
+  tipBox.style.left = left + "px"; tipBox.style.top = top + "px";
+}
+const hideTip = () => tipBox.classList.remove("on");
+document.addEventListener("mouseover", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
+document.addEventListener("focusin", ev => { const el = ev.target.closest?.(".conf"); if (el) showTip(el); });
+document.addEventListener("click", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
+addEventListener("scroll", hideTip, { passive: true });
 function renderTrackInfo(i) {
   const e = data.videos[i].meta, row = $("row" + i), cell = c => row.querySelector(".c-" + c);
   if (!e?.found) {
