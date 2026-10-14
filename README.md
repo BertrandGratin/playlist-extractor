@@ -38,7 +38,7 @@ By hand, if you prefer: `pip install -r requirements.txt` then `python app.py`.
 
 1. Paste a playlist link (`https://www.youtube.com/playlist?list=...`, or a video link containing `&list=...`).
 2. Click **Extract**.
-3. The copy icon next to a title or link copies it; **Copy all titles** / **Copy all links** at the top copy the whole list.
+3. The copy icon next to a title, link, artist, album, BPM or key copies it; **Copy all titles** / **Copy all links** at the top copy the whole list.
 4. In an artist card, click a photo to feature it; on hover, ⤢ opens it full size and ⬇ downloads it.
 
 Private or deleted videos are skipped. The playlist must be public or unlisted.

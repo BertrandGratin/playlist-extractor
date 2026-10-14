@@ -148,6 +148,9 @@
         background: transparent; color: var(--muted); border-radius: 7px; }
   .ic:hover { background: var(--panel-2); color: var(--text); }
   .ic.done { color: var(--ok); }
+  .ic.sm { display: inline-grid; width: 20px; height: 20px; border-radius: 6px; vertical-align: middle; }
+  .ic.sm svg { width: 12px; height: 12px; }
+  .grp { display: inline-flex; align-items: center; gap: 1px; margin-right: 4px; }
   .info { margin-top: 6px; font-size: 12.5px; color: #c9c9d6; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
   .jump { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); border-radius: 999px;
           padding: 1px 9px; font-size: 12px; }
@@ -252,7 +255,11 @@ function toast(msg) {
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 1400);
 }
 
-function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+// Small copy icon placed right after a piece of text; copies `text` when clicked.
+const copyBtn = (text, label) => `<button class="ic sm" data-copy-text="${esc(text)}" title="Copy ${esc(label)}">${ICON}</button>`;
 const fileSafe = s => (s || "image").replace(/[\\/:*?"<>|]/g, "_");
 const dl = (url, name) => `/api/image?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileSafe(name))}`;
 const slug = s => "k" + [...(s || "")].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
@@ -309,10 +316,10 @@ function renderTrackInfo(i) {
   const e = data.videos[i].meta, info = $("row" + i).querySelector(".info");
   if (!e?.found) { info.innerHTML = `<span class="muted">No info found for this track.</span>`; return; }
   const year = (e.release_date || "").slice(0, 4);
-  info.innerHTML = e.artists.map(a => `<button class="jump" data-jump="${slug("a" + a.name)}">${esc(a.name)}</button>`).join("")
-    + (e.album ? `<button class="jump alb-j" data-jump="${albumKey(e)}">💿 ${esc(e.album)}${year && year !== "0000" ? ` · ${year}` : ""}</button>` : "")
-    + (e.bpm ? `<span class="tag" title="BPM: ${esc(e.bpm_source || "")}">🥁 ${e.bpm} BPM</span>` : "")
-    + (e.key ? `<span class="tag" title="Key estimated from the audio preview · Camelot ${esc(e.camelot || "")}">🎹 ${esc(e.key)}${e.camelot ? ` <span class="muted">(${esc(e.camelot)})</span>` : ""}</span>` : "");
+  info.innerHTML = e.artists.map(a => `<span class="grp"><button class="jump" data-jump="${slug("a" + a.name)}">${esc(a.name)}</button>${copyBtn(a.name, "artist")}</span>`).join("")
+    + (e.album ? `<span class="grp"><button class="jump alb-j" data-jump="${albumKey(e)}">💿 ${esc(e.album)}${year && year !== "0000" ? ` · ${year}` : ""}</button>${copyBtn(e.album, "album")}</span>` : "")
+    + (e.bpm ? `<span class="grp"><span class="tag" title="BPM: ${esc(e.bpm_source || "")}">🥁 ${e.bpm} BPM</span>${copyBtn(e.bpm, "BPM")}</span>` : "")
+    + (e.key ? `<span class="grp"><span class="tag" title="Key estimated from the audio preview · Camelot ${esc(e.camelot || "")}">🎹 ${esc(e.key)}${e.camelot ? ` <span class="muted">(${esc(e.camelot)})</span>` : ""}</span>${copyBtn(e.key, "key")}</span>` : "");
 }
 
 /* ---------- Artists (one card per artist) ---------- */
@@ -339,7 +346,7 @@ function drawArtist(a) {
   el.innerHTML = `
     ${main ? `<img class="a-main" src="${esc(main.url)}" alt="${esc(a.name)}">` : `<div class="a-main"></div>`}
     <div style="min-width:0">
-      <p class="a-name">${esc(a.name)}</p>
+      <p class="a-name">${esc(a.name)} ${copyBtn(a.name, "artist")}</p>
       <div class="a-meta">
         ${countryName(a) ? `<span>${esc(countryName(a))}</span>` : ""}
         <span class="muted">${plural(a.tracks.size, "track")} in the playlist</span>
@@ -391,7 +398,7 @@ function addAlbum(e, trackIdx) {
     <div class="alb-cover">
       ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy"><a href="${dl(entry.cover, `${entry.artist} - ${entry.title}`)}" title="Download the cover">⬇ Cover</a>` : `<img alt="">`}
     </div>
-    <div class="alb-title">${esc(entry.title)}</div>
+    <div class="alb-title">${esc(entry.title)} ${copyBtn(entry.title, "album")}</div>
     <div class="alb-sub">
       ${esc(entry.artist || "")}${entry.type ? ` · ${esc(types[entry.type] || entry.type)}` : ""}<br>
       ${entry.date ? `📅 ${esc(fmtDate(entry.date))}<br>` : ""}
@@ -436,10 +443,10 @@ async function enrichAll(id) {
 }
 
 $("results").addEventListener("click", e => {
-  const c = e.target.closest("[data-copy]");
+  const c = e.target.closest("[data-copy], [data-copy-text]");
   if (c) {
     const icon = c.innerHTML;
-    copy(data.videos[c.dataset.i][c.dataset.copy]);
+    copy(c.dataset.copyText ?? data.videos[c.dataset.i][c.dataset.copy]);
     c.classList.add("done"); c.innerHTML = CHECK;
     setTimeout(() => { c.classList.remove("done"); c.innerHTML = icon; }, 1500);
     return;
