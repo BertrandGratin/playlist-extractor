@@ -118,6 +118,7 @@
            border: 1px solid var(--border); scroll-margin-top: 20px; }
   .acard.flash, .alb.flash { outline: 2px solid var(--magenta); }
   .a-main { width: 150px; height: 150px; object-fit: cover; background: var(--purple); display: block; }
+  .a-main.logo { object-fit: contain; background: #f4f4f4; padding: 10px; box-sizing: border-box; }
   .a-name { font-family: var(--serif); font-weight: 800; font-size: 34px; line-height: 1; margin: 0; }
   .a-meta { font-family: var(--serif); font-size: 15px; color: #cfcfcf; margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
@@ -197,6 +198,15 @@
             border: 1px solid #333; border-radius: 4px; box-shadow: 0 8px 24px rgba(0,0,0,.6); font-size: 12.5px;
             line-height: 1.45; pointer-events: none; opacity: 0; transition: opacity .12s; }
   .tipbox.on { opacity: 1; }
+  .tipbox.wide { width: 340px; }
+  .ltip { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .ltip img { width: 56px; height: 56px; object-fit: contain; background: #fff; flex: none; }
+  .ltip p { margin: 0; }
+  .label-link { padding: 0; font: inherit; color: inherit; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; cursor: pointer; }
+  .label-link:hover { color: var(--orange); }
+  .facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: 13px; color: #cfcfcf; }
+  .facts b { font-family: var(--serif); color: var(--muted); font-weight: 700; margin-right: 4px; }
+  .a-meta .jump { color: var(--orange); }
   .tipbox p { margin: 2px 0 8px; color: var(--muted); }
   .tipbox p:last-child { margin-bottom: 0; }
   .tip-h { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; }
@@ -351,6 +361,11 @@
     </details>
 
     <details class="sec" open>
+      <summary>Labels <span class="badge" id="nLabels">0</span></summary>
+      <div class="sec-body"><div class="artists-list" id="labels"><div class="empty">Searching…</div></div></div>
+    </details>
+
+    <details class="sec" open>
       <summary>Tracks <span class="badge" id="nTracks">0</span></summary>
       <div class="sec-body" style="padding:0">
         <div class="tbl">
@@ -390,7 +405,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let data = null, runId = 0;
-let artists = new Map(), albums = new Map();   // info grouped by artist name / by album
+let artists = new Map(), albums = new Map(), labels = new Map();   // info grouped by artist name / by album
 const regionNames = (() => { try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; } })();
 const ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const CHECK = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
@@ -515,15 +530,18 @@ function renderAudio(e, cell) {
 /* Explanation box shown when hovering (or tapping) a ✓ / ? mark. */
 const tipBox = document.createElement("div");
 tipBox.className = "tipbox"; document.body.appendChild(tipBox);
-function showTip(el) {
-  tipBox.innerHTML = el.dataset.tip; tipBox.classList.add("on");
+function showTip(el, html = el.dataset.tip) {
+  tipBox.innerHTML = html; tipBox.classList.add("on"); tipBox.classList.toggle("wide", el.classList.contains("label-link"));
   const r = el.getBoundingClientRect(), w = tipBox.offsetWidth, h = tipBox.offsetHeight;
   const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
   const top = r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8;
   tipBox.style.left = left + "px"; tipBox.style.top = top + "px";
 }
 const hideTip = () => tipBox.classList.remove("on");
-document.addEventListener("mouseover", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
+document.addEventListener("mouseover", ev => {
+  const el = ev.target.closest?.(".conf"), lab = ev.target.closest?.(".label-link");
+  el ? showTip(el) : lab ? showLabelTip(lab) : hideTip();
+});
 document.addEventListener("focusin", ev => { const el = ev.target.closest?.(".conf"); if (el) showTip(el); });
 document.addEventListener("click", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
 addEventListener("scroll", hideTip, { passive: true });
@@ -563,14 +581,20 @@ function drawArtist(a) {
   const genres = a.all_genres?.length ? a.all_genres : a.genres || [];
   const links = Object.entries(a.links || {}).filter(([, u]) => u);
   el.innerHTML = `
-    ${main ? `<img class="a-main" src="${esc(main.url)}" alt="${esc(a.name)}" data-zoom="${esc(a.name)}" data-group="main-${a.key}">` : `<div class="a-main"></div>`}
+    ${main ? `<img class="a-main ${a.kind === "label" ? "logo" : ""}" src="${esc(main.url)}" alt="" data-zoom="${esc(a.name)}" data-group="main-${a.key}" onerror="this.outerHTML='<div class=&quot;a-main&quot;></div>'">` : `<div class="a-main"></div>`}
     <div style="min-width:0">
-      <p class="a-name">${esc(a.name)} ${copyBtn(a.name, "artist")}</p>
-      <div class="a-meta">${plural(a.tracks.size, "track")} in the playlist</div>
+      <p class="a-name">${esc(a.name)} ${copyBtn(a.name, a.kind === "label" ? "label" : "artist")}</p>
+      <div class="a-meta">${a.kind === "label"
+        ? `Label · ${plural(a.albums.size, "album")} in the playlist: ${[...a.albums].map(k => albums.get(k)).filter(Boolean).map(b =>
+            `<button class="jump" data-jump="${b.key}">${esc(b.title)}</button>`).join(", ")}`
+        : `${plural(a.tracks.size, "track")} in the playlist`}</div>
       <div class="chips">
         ${countryName(a) ? `<span class="chip">${esc(countryName(a))}</span>` : ""}
+        ${a.type ? `<span class="chip">${esc(a.type)}</span>` : ""}
         ${genres.map(g => `<span class="chip">${esc(g)}</span>`).join("")}
       </div>
+      ${(a.facts || []).length ? `<div class="facts">${a.facts.map(f =>
+        `<span><b>${esc(f.label)}</b> ${esc(f.value)}</span>`).join("")}</div>` : ""}
       <div class="desc-box">
         <div class="desc-h">Description
           ${(a.descriptions || []).length > 1 ? a.descriptions.map((x, k) =>
@@ -578,7 +602,7 @@ function drawArtist(a) {
           <span class="links">${links.map(([n, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`).join("")}</span>
         </div>
         ${d ? `<div class="desc ${a.open ? "open" : ""}">${esc(d.text)}</div>
-               <button class="more" data-more="${a.key}">${a.open ? "Show less" : "Read more"}</button>` : `<div class="desc muted">No description found…</div>`}
+               <button class="more" data-more="${a.key}">${a.open ? "Show less" : "Read more"}</button>` : `<div class="desc muted">${a.kind === "label" && !a.loaded ? "Looking up the label…" : "No description found…"}</div>`}
       </div>
     </div>
     ${imgs.length ? `<div class="strip">${imgs.map((im, k) => `
@@ -588,14 +612,66 @@ function drawArtist(a) {
         <div class="src">${esc(im.source)}</div>
       </div>`).join("")}</div>` : ""}`;
 }
-$("artists").addEventListener("click", e => {
-  const t = e.target, a = artists.get(t.dataset.more || t.dataset.desc || t.dataset.pick);
+const onCardClick = e => {
+  const t = e.target, k = t.dataset.more || t.dataset.desc || t.dataset.pick, a = artists.get(k) || labels.get(k);
   if (!a) return;
   if (t.dataset.more) a.open = !a.open;
   if (t.dataset.desc) { a.desc = +t.dataset.k; a.open = false; }
   if (t.dataset.pick) a.img = +t.dataset.k;
   drawArtist(a);
-});
+};
+$("artists").addEventListener("click", onCardClick);
+$("labels").addEventListener("click", onCardClick);
+
+/* ---------- Labels (one card per label; details fetched when the card is seen or the name hovered) ---------- */
+const labelKey = name => slug("l" + name);
+const labelSeen = new IntersectionObserver(entries => entries.forEach(en => en.isIntersecting && loadLabel(en.target.id)));
+function addLabel(name, albumK) {
+  const key = labelKey(name);
+  let entry = labels.get(key);
+  if (!entry) {
+    entry = { key, kind: "label", name, raw: name, albums: new Set(), images: [], descriptions: [], facts: [], links: {},
+              img: 0, desc: 0, open: false, loaded: false };
+    labels.set(key, entry);
+    if (labels.size === 1) $("labels").innerHTML = "";
+    const el = document.createElement("div");
+    el.className = "acard"; el.id = key; $("labels").appendChild(el);
+    $("nLabels").textContent = labels.size;
+    labelSeen.observe(el);
+  }
+  entry.albums.add(albumK);
+  drawArtist(entry);
+}
+function loadLabel(key) {
+  const entry = labels.get(key);
+  if (!entry) return Promise.resolve();
+  if (!entry.promise) {
+    const run = runId;
+    entry.promise = fetch(`/api/label?name=${encodeURIComponent(entry.raw)}`).then(r => r.json()).catch(() => ({}))
+      .then(info => {
+        if (run !== runId) return;
+        Object.assign(entry, { images: info.images || [], descriptions: info.descriptions || [], facts: info.facts || [],
+          links: info.links || {}, country: info.country, type: info.type, loaded: true, found: info.found });
+        if (info.name) entry.name = info.name;
+        drawArtist(entry);
+        if (tipFor && tipFor.dataset.label === key) showLabelTip(tipFor);
+      });
+  }
+  return entry.promise;
+}
+let tipFor = null;
+function showLabelTip(el) {
+  const e = labels.get(el.dataset.label);
+  if (!e) return;
+  tipFor = el;
+  if (!e.loaded) { loadLabel(e.key); return showTip(el, `<div class="tip-h">${esc(e.name)}</div><p>Looking up the label…</p>`); }
+  const logo = e.images[0], d = e.descriptions[0];
+  const short = d ? (d.text.length > 260 ? d.text.slice(0, 260).replace(/\s+\S*$/, "") + "…" : d.text) : "No description found.";
+  showTip(el, `<div class="ltip">${logo ? `<img src="${esc(logo.url)}" alt="">` : ""}<div>
+    <div class="tip-h">${esc(e.name)}</div>
+    <p>${[countryName(e), ...e.facts.filter(f => ["Founded", "Part of"].includes(f.label)).map(f => `${f.label.toLowerCase()} ${f.value}`)].filter(Boolean).map(esc).join(" · ")}</p></div></div>
+    <p>${esc(short)}</p><div class="tip-l">Click the name for the full label card</div>`);
+}
 
 /* ---------- Albums (one card per album) ---------- */
 const albumKey = e => slug("b" + (e.album_id || `${e.album_artist}|${e.album}`));
@@ -612,6 +688,7 @@ function addAlbum(e, trackIdx) {
     el.className = "alb"; el.id = key; $("albums").appendChild(el);
     $("nAlbums").textContent = albums.size;
   }
+  if (entry.label) addLabel(entry.label, key);
   entry.tracks.add(trackIdx);
   const types = { album: "Album", single: "Single", ep: "EP", compile: "Compilation" };
   $(key).innerHTML = `
@@ -625,7 +702,7 @@ function addAlbum(e, trackIdx) {
     <div class="alb-sub">
       ${esc(entry.artist || "")}<br>
       ${entry.date ? `${esc(fmtDate(entry.date))}<br>` : ""}
-      ${entry.label ? `${esc(entry.label)}<br>` : ""}
+      ${entry.label ? `<button class="label-link jump" data-jump="${labelKey(entry.label)}" data-label="${labelKey(entry.label)}">${esc(entry.label)}</button><br>` : ""}
     </div>
     ${entry.genres.length ? `<div class="chips">${entry.genres.map(g =>
       `<span class="chip" title="Source: ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
@@ -720,9 +797,9 @@ $("form").onsubmit = async e => {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || "Unknown error");
-    data = j; artists = new Map(); albums = new Map();
-    $("artists").innerHTML = $("albums").innerHTML = `<div class="empty">Searching…</div>`;
-    $("nArtists").textContent = $("nAlbums").textContent = "0";
+    data = j; artists = new Map(); albums = new Map(); labels = new Map();
+    $("artists").innerHTML = $("albums").innerHTML = $("labels").innerHTML = `<div class="empty">Searching…</div>`;
+    $("nArtists").textContent = $("nAlbums").textContent = $("nLabels").textContent = "0";
     renderPlaylist(); renderTracks();
     document.body.classList.remove("landing");
     $("results").style.display = "block";

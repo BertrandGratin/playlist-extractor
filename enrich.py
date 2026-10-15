@@ -238,6 +238,124 @@ def _mb_genres(entity):
     return [g["name"] for g in sorted((entity or {}).get("genres") or [], key=lambda g: -g.get("count", 0))]
 
 
+# ---------- Shared helpers for Wikidata, Discogs and MusicBrainz links ----------
+@lru_cache(maxsize=1024)
+def wikidata_entity(qid):
+    return ((_get("https://www.wikidata.org/wiki/Special:EntityData/" + qid + ".json") or {}).get("entities") or {}).get(qid) or {}
+
+
+def _wd_values(ent, prop):
+    out = []
+    for c in (ent.get("claims") or {}).get(prop, []):
+        v = ((c.get("mainsnak") or {}).get("datavalue") or {}).get("value")
+        if v is not None:
+            out.append(v)
+    return out
+
+
+def _wd_names(qids):
+    """English (else French) names of Wikidata items."""
+    qids = [q for q in qids if q][:12]
+    if not qids:
+        return []
+    d = _get("https://www.wikidata.org/w/api.php", action="wbgetentities", ids="|".join(qids), props="labels",
+             languages="en|fr", format="json") or {}
+    out = []
+    for q in qids:
+        labels = ((d.get("entities") or {}).get(q) or {}).get("labels") or {}
+        name = (labels.get("en") or labels.get("fr") or {}).get("value")
+        if name:
+            out.append(name)
+    return out
+
+
+def _wd_year(ent, prop):
+    for v in _wd_values(ent, prop):
+        m = re.match(r"[+-]?(\d{4})", (v or {}).get("time", "")) if isinstance(v, dict) else None
+        if m:
+            return m.group(1)
+    return None
+
+
+def _wikipedia_descriptions(ent):
+    """Wikipedia summaries (English and French) of a Wikidata item, plus the article's main image."""
+    out, image = [], None
+    sitelinks = ent.get("sitelinks") or {}
+    for lang in ("en", "fr"):
+        title = (sitelinks.get(f"{lang}wiki") or {}).get("title")
+        d = title and _get(f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/" + quote(title.replace(" ", "_"), safe=""))
+        if d and d.get("type") == "standard" and d.get("extract"):
+            out.append({"source": f"Wikipedia ({lang.upper()})", "text": d["extract"],
+                        "url": ((d.get("content_urls") or {}).get("desktop") or {}).get("page")})
+            image = image or (d.get("originalimage") or {}).get("source")
+    return out, image
+
+
+DISCOGS_MARKUP = [
+    (re.compile(r"\[(?:a|l|m|r)=([^\]]+)\]"), r"\1"),       # [a=Artist Name] -> Artist Name
+    (re.compile(r"\[(?:a|l|m|r)\d+\]"), ""),                # [a12345] (an id with no name)
+    (re.compile(r"\[url=[^\]]*\]([^\[]*)\[/url\]"), r"\1"),
+    (re.compile(r"\[/?(?:b|i|u)\]"), ""),
+]
+
+
+def _discogs_text(text):
+    for rx, rep in DISCOGS_MARKUP:
+        text = rx.sub(rep, text or "")
+    return re.sub(r"\r\n?", "\n", text).strip()
+
+
+@lru_cache(maxsize=1024)
+def discogs(kind, did):
+    """Discogs artist or label ("artists"/"labels", id): profile text, images, page (public API, no key)."""
+    d = _get(f"https://api.discogs.com/{kind}/{did}") or {}
+    if not d:
+        return None
+    return {
+        "profile": _discogs_text(d.get("profile")),
+        "images": [i.get("uri") for i in d.get("images") or [] if i.get("uri")],
+        "url": d.get("uri"),
+        "parent": (d.get("parent_label") or {}).get("name"),
+        "sublabels": [x.get("name") for x in d.get("sublabels") or [] if x.get("name")][:12],
+        "members": [x.get("name") for x in d.get("members") or [] if x.get("name")][:12],
+    }
+
+
+LINK_NAMES = [  # (part of the URL, name shown)
+    ("bandcamp.com", "Bandcamp"), ("soundcloud.com", "SoundCloud"), ("discogs.com", "Discogs"),
+    ("allmusic.com", "AllMusic"), ("last.fm", "Last.fm"), ("instagram.com", "Instagram"), ("twitter.com", "X"),
+    ("x.com", "X"), ("facebook.com", "Facebook"), ("youtube.com", "YouTube"), ("tiktok.com", "TikTok"),
+    ("open.spotify.com", "Spotify"), ("music.apple.com", "Apple Music"), ("rateyourmusic.com", "RateYourMusic"),
+]
+
+
+def _mb_links(relations):
+    """Useful links from MusicBrainz relations: official site, Bandcamp, Discogs, socials…"""
+    links, ids = {}, {}
+    for r in relations or []:
+        url = (r.get("url") or {}).get("resource") or ""
+        if not url:
+            continue
+        if r.get("type") == "wikidata":
+            ids["wikidata"] = url.rstrip("/").rsplit("/", 1)[-1]
+            continue
+        if r.get("type") == "official homepage":
+            links.setdefault("Official site", url)
+            continue
+        m = re.search(r"discogs\.com/(artist|label)/(\d+)", url)
+        if m:
+            ids["discogs"] = m.group(2)
+        for part, name in LINK_NAMES:
+            if part in url:
+                links.setdefault(name, url)
+                break
+    return links, ids
+
+
+def _year(date):
+    return (date or "")[:4] or None
+
+
 @lru_cache(maxsize=1024)
 def artist_info(name, deezer_picture=""):
     """An artist's country of origin, genres, descriptions and every photo found."""
@@ -277,32 +395,172 @@ def artist_info(name, deezer_picture=""):
         if not info["country_label"] and adb.get("strCountry"):
             info["country_label"] = adb["strCountry"]
 
-    if info.get("mbid"):
-        full = _mb(f"artist/{info['mbid']}", inc="url-rels+genres") or {}
-        info["genres"] = _mb_genres(full)[:6]
-        wikidata = next((r["url"]["resource"].rsplit("/", 1)[-1] for r in full.get("relations") or []
-                         if r.get("type") == "wikidata"), None)
-        if wikidata:
-            ent = _get("https://www.wikidata.org/wiki/Special:EntityData/" + wikidata + ".json") or {}
-            claims = ((ent.get("entities") or {}).get(wikidata) or {}).get("claims") or {}
-            for c in claims.get("P18", []):  # main image
-                add_img(_commons_url(c["mainsnak"]["datavalue"]["value"]), "Wikimedia")
-            for c in claims.get("P373", [])[:1]:  # Commons category: more photos
-                for url in _commons_category(c["mainsnak"]["datavalue"]["value"]):
-                    add_img(url, "Wikimedia Commons")
-            sitelinks = ((ent.get("entities") or {}).get(wikidata) or {}).get("sitelinks") or {}
-            for lang in ("en", "fr"):
-                title = (sitelinks.get(f"{lang}wiki") or {}).get("title")
-                summary = title and wikipedia_summary(title, lang)
-                if summary:
-                    info["descriptions"].append({"source": f"Wikipedia ({lang.upper()})", **summary})
-                    info["links"]["Wikipedia"] = info["links"].get("Wikipedia") or summary["url"]
-                    break
+    if adb:
+        for lang in ("EN", "FR"):
+            bio = (adb.get(f"strBiography{lang}") or "").strip() if _sim(adb.get("strArtist") or "", name) > 0.85 else ""
+            if bio:
+                info["descriptions"].append({"source": f"TheAudioDB ({lang})", "text": bio,
+                                             "url": f"https://www.theaudiodb.com/artist/{adb.get('idArtist')}"})
+        for k, n in (("strWebsite", "Official site"), ("strFacebook", "Facebook"), ("strTwitter", "X")):
+            u = (adb.get(k) or "").strip()
+            if u:
+                info["links"].setdefault(n, u if u.startswith("http") else "https://" + u)
 
+    facts = []
+    if info.get("mbid"):
+        full = _mb(f"artist/{info['mbid']}", inc="url-rels+genres+artist-rels") or {}
+        info["genres"] = _mb_genres(full)[:6]
+        links, ids = _mb_links(full.get("relations"))
+        for k, v in links.items():
+            info["links"].setdefault(k, v)
+        group = full.get("type") == "Group"
+        life = full.get("life-span") or {}
+        place = (full.get("begin-area") or {}).get("name") or (full.get("area") or {}).get("name")
+        if life.get("begin"):
+            facts.append({"label": "Formed" if group else "Born", "value": ", ".join(x for x in (_year(life["begin"]), place) if x)})
+        if life.get("ended") and life.get("end"):
+            facts.append({"label": "Split up" if group else "Died", "value": _year(life["end"])})
+        members = [r["artist"]["name"] for r in full.get("relations") or []
+                   if r.get("type") == "member of band" and r.get("direction") == "backward" and r.get("artist")]
+        if members:
+            facts.append({"label": "Members", "value": ", ".join(dict.fromkeys(members))})
+        if full.get("disambiguation"):
+            facts.append({"label": "Known as", "value": full["disambiguation"]})
+
+        if ids.get("wikidata"):
+            ent = wikidata_entity(ids["wikidata"])
+            for v in _wd_values(ent, "P18"):  # main image
+                add_img(_commons_url(v), "Wikimedia")
+            for v in _wd_values(ent, "P373")[:1]:  # Commons category: more photos
+                for url in _commons_category(v):
+                    add_img(url, "Wikimedia Commons")
+            descs, img = _wikipedia_descriptions(ent)
+            add_img(img, "Wikipedia")
+            for d in descs:
+                info["descriptions"].append(d)
+                info["links"].setdefault("Wikipedia", d["url"])
+            labels = _wd_names([v.get("id") for v in _wd_values(ent, "P264") if isinstance(v, dict)])
+            if labels:
+                facts.append({"label": "Labels", "value": ", ".join(labels)})
+
+        if ids.get("discogs"):
+            dg = discogs("artists", ids["discogs"])
+            if dg:
+                if dg["profile"]:
+                    info["descriptions"].append({"source": "Discogs", "text": dg["profile"], "url": dg["url"]})
+                for u in dg["images"]:
+                    add_img(u, "Discogs")
+                if dg["members"] and not members:
+                    facts.append({"label": "Members", "value": ", ".join(dg["members"])})
+    info["facts"] = facts
+
+    order = ["Genius", "Wikipedia (EN)", "Wikipedia (FR)", "TheAudioDB (EN)", "TheAudioDB (FR)", "Discogs"]
+    info["descriptions"].sort(key=lambda d: order.index(d["source"]) if d["source"] in order else 99)
     artist_genres = {}
     _add_genres(artist_genres, info["genres"], "MusicBrainz")
     _add_genres(artist_genres, info["audiodb_genres"], "TheAudioDB")
     info["all_genres"] = [g["name"] for g in sorted(artist_genres.values(), key=lambda g: -g["score"])][:8]
+    return info
+
+
+def _label_name(raw):
+    """Deezer label strings: "Parlophone (France)", "Columbia/Sony Music", "XL Recordings Ltd" -> main name."""
+    name = re.sub(r"^\s*(?:\([pc]\)|℗|©)?\s*\d{4}\s+", "", raw or "", flags=re.I)  # "(P) 2019 Label"
+    name = re.split(r"\s*/\s*|\s+under exclusive licen[cs]e.*|\s*,\s*", name, flags=re.I)[0]
+    name = re.sub(r"\s*\(.*?\)\s*", " ", name)
+    name = re.sub(r"\b(ltd\.?|limited|inc\.?|llc|gmbh|s\.?a\.?s?\.?|b\.?v\.?)$", "", name.strip(), flags=re.I)
+    return name.strip(" .-")
+
+
+def _wd_search(name, hint):
+    """Wikidata item for a name whose description mentions a word (e.g. "label"), or None."""
+    d = _get("https://www.wikidata.org/w/api.php", action="wbsearchentities", search=name, language="en",
+             format="json", limit=7) or {}
+    for hit in d.get("search") or []:
+        desc = (hit.get("description") or "").lower()
+        if _sim(hit.get("label", ""), name) > 0.85 and any(h in desc for h in hint):
+            return hit.get("id")
+    return None
+
+
+@lru_cache(maxsize=512)
+def label_info(raw_name):
+    """Everything found about a record label: description(s), logo and images, country, founding, founders, parent…"""
+    name = _label_name(raw_name) or raw_name
+    info = {"name": name, "raw": raw_name, "descriptions": [], "images": [], "facts": [], "links": {},
+            "country": None, "type": None, "found": False}
+    seen = set()
+
+    def add_img(url, source):
+        if url and url not in seen:
+            seen.add(url)
+            info["images"].append({"url": url, "source": source})
+
+    def fact(label, value):
+        if value and all(f["label"] != label for f in info["facts"]):
+            info["facts"].append({"label": label, "value": value})
+
+    ids = {}
+    hits = (_mb("label/", query=f'label:"{name}"', limit=5) or {}).get("labels") or []
+    hit = next((h for h in hits if _sim(h.get("name", ""), name) > 0.85), None)
+    if hit:
+        full = _mb(f"label/{hit['id']}", inc="url-rels+label-rels") or {}
+        info["found"] = True
+        info["name"] = full.get("name") or hit.get("name") or name
+        info["country"] = full.get("country") or hit.get("country")
+        info["type"] = full.get("type")
+        life = full.get("life-span") or {}
+        fact("Founded", _year(life.get("begin")))
+        if life.get("ended"):
+            fact("Closed", _year(life.get("end")) or "yes")
+        fact("Based in", (full.get("area") or {}).get("name"))
+        if full.get("label-code"):
+            fact("Label code", f"LC {full['label-code']}")
+        parents = [r["label"]["name"] for r in full.get("relations") or []
+                   if r.get("type") in ("label ownership", "imprint") and r.get("direction") == "backward" and r.get("label")]
+        fact("Part of", ", ".join(dict.fromkeys(parents)))
+        imprints = [r["label"]["name"] for r in full.get("relations") or []
+                    if r.get("type") in ("label ownership", "imprint") and r.get("direction") == "forward" and r.get("label")]
+        fact("Sub-labels", ", ".join(list(dict.fromkeys(imprints))[:10]))
+        links, ids = _mb_links(full.get("relations"))
+        info["links"].update(links)
+        info["links"]["MusicBrainz"] = f"https://musicbrainz.org/label/{hit['id']}"
+
+    qid = ids.get("wikidata") or _wd_search(name, ("label", "record company", "music company", "maison de disques"))
+    if qid:
+        info["found"] = True
+        ent = wikidata_entity(qid)
+        for v in _wd_values(ent, "P154"):  # logo
+            add_img(_commons_url(v, 800), "Wikimedia (logo)")
+        for v in _wd_values(ent, "P18"):
+            add_img(_commons_url(v), "Wikimedia")
+        descs, img = _wikipedia_descriptions(ent)
+        add_img(img, "Wikipedia")
+        info["descriptions"] += descs
+        if descs:
+            info["links"].setdefault("Wikipedia", descs[0]["url"])
+        fact("Founded", _wd_year(ent, "P571"))
+        ref = lambda p: _wd_names([v.get("id") for v in _wd_values(ent, p) if isinstance(v, dict)])
+        fact("Founded by", ", ".join(ref("P112")))
+        fact("Part of", ", ".join(ref("P749")))
+        fact("Based in", ", ".join(ref("P159")))
+        fact("Distributed by", ", ".join(ref("P750")))
+        for v in _wd_values(ent, "P856")[:1]:
+            info["links"].setdefault("Official site", v)
+        if not ids.get("discogs"):
+            ids["discogs"] = next(iter(_wd_values(ent, "P1955")), None)  # Discogs label id
+
+    if ids.get("discogs"):
+        dg = discogs("labels", ids["discogs"])
+        if dg:
+            info["found"] = True
+            if dg["profile"]:
+                info["descriptions"].append({"source": "Discogs", "text": dg["profile"], "url": dg["url"]})
+            for u in dg["images"]:
+                add_img(u, "Discogs")
+            fact("Part of", dg["parent"])
+            fact("Sub-labels", ", ".join(dg["sublabels"]))
+            info["links"].setdefault("Discogs", dg["url"])
     return info
 
 
@@ -330,7 +588,6 @@ def audiodb_track_genres(artist, track):
     return [x for x in (t.get("strGenre"), t.get("strStyle")) if x] if t else []
 
 
-@lru_cache(maxsize=2048)
 class _SilentLogger:
     def debug(self, msg): pass
     warning = info = error = debug

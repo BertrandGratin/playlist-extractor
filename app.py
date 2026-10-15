@@ -11,7 +11,7 @@ import requests
 from flask import Flask, Response, jsonify, request, send_file
 from yt_dlp import YoutubeDL
 
-from enrich import enrich, session
+from enrich import enrich, label_info, session
 from titles import clean_title
 
 UNAVAILABLE = re.compile(r"^\[(private|deleted|unavailable|removed)( video)?\]$", re.I)
@@ -113,8 +113,16 @@ def enrich_video():
         return jsonify(found=False, error=str(exc))
 
 
+@app.get("/api/label")
+def label():
+    try:
+        return jsonify(label_info(request.args.get("name", "")))
+    except Exception as exc:
+        return jsonify(found=False, name=request.args.get("name", ""), error=str(exc))
+
+
 IMAGE_HOSTS = ("dzcdn.net", "deezer.com", "theaudiodb.com", "wikimedia.org", "coverartarchive.org", "archive.org",
-               "genius.com", "ytimg.com", "ggpht.com", "googleusercontent.com")
+               "genius.com", "ytimg.com", "ggpht.com", "googleusercontent.com", "discogs.com")
 
 
 @app.get("/api/image")
