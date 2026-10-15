@@ -224,6 +224,8 @@
   @media (hover: none) { .play-row { display: flex; } .num-t { visibility: hidden; } }
   .row.playing { background: #160c1c; }
   .row.playing .title { color: var(--magenta); }
+  .vtag { flex: none; font-size: 11px; color: var(--dim); border: 1px solid #262626; padding: 0 5px; line-height: 16px;
+          white-space: nowrap; margin-left: 2px; user-select: none; }
   body.has-player { padding-bottom: 96px; }
   body.has-player .toast { bottom: 110px; }
   .player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: 84px; display: none; align-items: center;
@@ -427,8 +429,8 @@ function renderTracks() {
     <div class="row" id="row${i}">
       <div class="num"><span class="num-t">${i + 1}</span>${ytId(v.url) ? `<button class="play-row" data-play="${i}" title="Play">${PLAY}</button>` : ""}</div>
       <div class="cell c-track">
-        <div class="line"><div class="title" title="${esc(v.title)}">${esc(v.title)}</div>
-          <button class="ic" data-copy="title" data-i="${i}" title="Copy title">${ICON}</button></div>
+        <div class="line"><div class="title" title="${esc(v.title)}">${esc(v.name || v.title)}</div>${(v.tags || []).map(t => `<span class="vtag">${esc(t)}</span>`).join("")}
+          <button class="ic" data-copy="name" data-i="${i}" title="Copy title">${ICON}</button></div>
         <div class="line"><a class="link" href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.url)}</a>
           <button class="ic" data-copy="url" data-i="${i}" title="Copy link">${ICON}</button></div>
       </div>
@@ -626,7 +628,7 @@ $("results").addEventListener("click", e => {
   }
 });
 
-$("copyTitles").onclick = () => data && copy(data.videos.map(v => v.title).join("\n"));
+$("copyTitles").onclick = () => data && copy(data.videos.map(v => v.name || v.title).join("\n"));
 $("copyLinks").onclick = () => data && copy(data.videos.map(v => v.url).join("\n"));
 
 function save(text, name, type) {
@@ -637,11 +639,11 @@ function save(text, name, type) {
 $("csv").onclick = () => {
   if (!data) return;
   const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
-  const head = ["YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "BPM confidence", "Key", "Camelot", "Key confidence", "Cover", "Artist photos"];
+  const head = ["Title", "YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "BPM confidence", "Key", "Camelot", "Key confidence", "Cover", "Artist photos"];
   const rows = data.videos.map(v => {
     const e = v.meta || {};
     const ar = e.artists || [];
-    return [v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
+    return [v.name || v.title, v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
             e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.bpm, e.bpm_confidence, e.key, e.camelot, e.key_confidence, e.cover,
             ar.flatMap(a => (a.images || []).map(i => i.url)).join(" ")].map(q).join(";");
   });
@@ -725,7 +727,7 @@ async function playTrack(i, auto = false) {
   $("row" + i)?.classList.add("playing");
   player.i = i; player.auto = auto;
   const e = v.meta || {};
-  $("pTitle").textContent = e.found ? e.track : v.title;
+  $("pTitle").textContent = e.found ? e.track : (v.name || v.title);
   $("pSub").textContent = e.found ? e.artists.map(a => a.name).join(", ") + (e.album ? " · " + e.album : "") : (v.channel || "");
   $("pCover").src = e.cover || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
   $("pvOpen").href = v.url; $("pvMsg").classList.remove("on");

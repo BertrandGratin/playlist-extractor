@@ -12,6 +12,7 @@ from flask import Flask, Response, jsonify, request, send_file
 from yt_dlp import YoutubeDL
 
 from enrich import enrich, session
+from titles import clean_title
 from updater import VERSION, update_if_needed
 
 app = Flask(__name__)
@@ -58,8 +59,11 @@ def playlist():
         title = e.get("title") or "(untitled)"
         if title in ("[Private video]", "[Deleted video]"):
             continue
+        name, tags = clean_title(title)
         videos.append({
-            "title": title,
+            "title": title,   # original YouTube title (used to identify the song)
+            "name": name,     # song name only: no "Artist - ", no "(Official Video)"…
+            "tags": tags,     # the mentions removed from the title
             "url": f"https://www.youtube.com/watch?v={vid}" if vid else e.get("url"),
             "channel": e.get("channel") or e.get("uploader") or "",
             "duration": e.get("duration"),
