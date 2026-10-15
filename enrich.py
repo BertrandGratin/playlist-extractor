@@ -10,6 +10,7 @@ Free sources, no API key needed:
 - YouTube       : the whole song's audio, analysed for BPM and key (falls back to the Deezer preview)
 - GetSongBPM    : BPM and key cross-check (needs a free API key, added at build time)
 """
+import html
 import os
 import re
 import tempfile
@@ -352,6 +353,81 @@ def _mb_links(relations):
     return links, ids
 
 
+BANDCAMP_SEARCH = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic"
+
+
+@lru_cache(maxsize=2048)
+def bandcamp_search(text, kind):
+    """Bandcamp's own search box: kind "b" for artists and labels, "a" for albums."""
+    try:
+        r = session.post(BANDCAMP_SEARCH, json={"search_text": text, "search_filter": kind, "full_page": False,
+                                                "fan_id": None}, timeout=10)
+        r.raise_for_status()
+        return tuple((r.json().get("auto") or {}).get("results") or [])
+    except (requests.RequestException, ValueError, AttributeError):
+        return ()
+
+
+def _bc_image(url):
+    """Bandcamp image in large size (the search gives a small one)."""
+    return re.sub(r"_\d+\.(jpg|png)$", r"_10.\1", url) if url else None
+
+
+def bandcamp_page(name, label):
+    """Bandcamp page of the artist (label=False) or label (label=True) with this exact name."""
+    hits = [r for r in bandcamp_search(name, "b") if r.get("type") == "b" and _sim(r.get("name") or "", name) > 0.9
+            and not (label and r.get("is_label") is False)]  # a label is never matched to a plain artist page
+    hits.sort(key=lambda r: bool(r.get("is_label")) != label)  # an artist page first for an artist, a label page for a label
+    for r in hits:
+        url = (r.get("item_url_root") or r.get("item_url_path") or "").rstrip("/")
+        if url.startswith("http"):
+            return {"url": url, "image": _bc_image(r.get("img")), "location": r.get("location")}
+    return None
+
+
+@lru_cache(maxsize=2048)
+def bandcamp_album(artist, title):
+    """Bandcamp page of the album, when the artist or their label sells it there."""
+    for query in (title, f"{artist} {title}"):
+        for r in bandcamp_search(query, "a"):
+            if (r.get("type") == "a" and _sim(r.get("name") or "", title) > 0.85
+                    and _sim(r.get("band_name") or "", artist) > 0.8 and (r.get("item_url_path") or "").startswith("http")):
+                return r["item_url_path"]
+    return None
+
+
+@lru_cache(maxsize=1024)
+def bandcamp_bio(url):
+    """The "about" text of a Bandcamp artist or label page."""
+    try:
+        page = session.get(url, timeout=10).text
+    except requests.RequestException:
+        return ""
+    m = re.search(r'id="bio-text"[^>]*>(.*?)</p>', page, re.S)
+    if not m:
+        return ""
+    text = re.sub(r'<span class="peekaboo-ellipsis".*?</span>|<span class="peekaboo-link".*', "", m.group(1), flags=re.S)  # "... more"
+    text = re.sub(r"<br\s*/?>", "\n", text)
+    text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _add_bandcamp(info, name, label, add_img):
+    """Bandcamp link, picture and "about" text of an artist or label."""
+    page = None
+    if not info["links"].get("Bandcamp"):
+        page = bandcamp_page(name, label)
+        if page:
+            info["links"]["Bandcamp"] = page["url"]
+            add_img(page["image"], "Bandcamp")
+    url = info["links"].get("Bandcamp") or ""
+    if re.match(r"https?://[\w-]+\.bandcamp\.com", url):
+        bio = bandcamp_bio(url.split(".com")[0] + ".com/")
+        if bio:
+            info["descriptions"].append({"source": "Bandcamp", "text": bio, "url": url})
+    return page
+
+
 def _year(date):
     return (date or "")[:4] or None
 
@@ -439,6 +515,8 @@ def artist_info(name, deezer_picture=""):
             for d in descs:
                 info["descriptions"].append(d)
                 info["links"].setdefault("Wikipedia", d["url"])
+            for v in _wd_values(ent, "P3283")[:1]:  # Bandcamp profile id
+                info["links"].setdefault("Bandcamp", f"https://{v}.bandcamp.com")
             labels = _wd_names([v.get("id") for v in _wd_values(ent, "P264") if isinstance(v, dict)])
             if labels:
                 facts.append({"label": "Labels", "value": ", ".join(labels)})
@@ -453,8 +531,9 @@ def artist_info(name, deezer_picture=""):
                 if dg["members"] and not members:
                     facts.append({"label": "Members", "value": ", ".join(dg["members"])})
     info["facts"] = facts
+    _add_bandcamp(info, name, False, add_img)
 
-    order = ["Genius", "Wikipedia (EN)", "Wikipedia (FR)", "TheAudioDB (EN)", "TheAudioDB (FR)", "Discogs"]
+    order = ["Genius", "Wikipedia (EN)", "Wikipedia (FR)", "TheAudioDB (EN)", "TheAudioDB (FR)", "Discogs", "Bandcamp"]
     info["descriptions"].sort(key=lambda d: order.index(d["source"]) if d["source"] in order else 99)
     artist_genres = {}
     _add_genres(artist_genres, info["genres"], "MusicBrainz")
@@ -547,6 +626,8 @@ def label_info(raw_name):
         fact("Distributed by", ", ".join(ref("P750")))
         for v in _wd_values(ent, "P856")[:1]:
             info["links"].setdefault("Official site", v)
+        for v in _wd_values(ent, "P3283")[:1]:  # Bandcamp profile id
+            info["links"].setdefault("Bandcamp", f"https://{v}.bandcamp.com")
         if not ids.get("discogs"):
             ids["discogs"] = next(iter(_wd_values(ent, "P1955")), None)  # Discogs label id
 
@@ -561,6 +642,10 @@ def label_info(raw_name):
             fact("Part of", dg["parent"])
             fact("Sub-labels", ", ".join(dg["sublabels"]))
             info["links"].setdefault("Discogs", dg["url"])
+    page = _add_bandcamp(info, info["name"], True, add_img)
+    if page:
+        info["found"] = True
+        fact("Based in", page["location"])
     return info
 
 
@@ -789,5 +874,6 @@ def enrich(title, channel="", video_url=""):
         "genres": genre_list,
         "artists": artist_details,
         "deezer_url": track.get("link"),
+        "bandcamp_url": bandcamp_album((album.get("artist") or {}).get("name") or main, alb_info.get("title") or ""),
         **track_audio_features(track["id"], video_url, main, track.get("title") or track_guess),
     }

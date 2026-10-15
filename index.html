@@ -138,6 +138,8 @@
   .links { display: flex; gap: 10px; margin-left: auto; font-family: var(--sans); font-weight: 400; }
   .links a { color: var(--muted); font-size: 12px; }
   .links a:hover { color: var(--magenta); }
+  .alb-link { color: var(--muted); font-size: 12px; font-family: var(--sans); }
+  .alb-link:hover { color: var(--magenta); }
   .strip { grid-column: 1 / -1; display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
   .strip .shot { position: relative; flex: none; }
   .strip img { width: 84px; height: 84px; object-fit: cover; cursor: pointer; display: block; outline: 2px solid transparent;
@@ -734,6 +736,7 @@ function addAlbum(e, trackIdx) {
     el.className = "alb"; el.id = key; $("albums").appendChild(el);
     $("nAlbums").textContent = albums.size;
   }
+  entry.bandcamp = entry.bandcamp || e.bandcamp_url;
   if (entry.label) addLabel(entry.label, key);
   maybeAlbumCover(!(data.thumbnails || []).length);
   entry.tracks.add(trackIdx);
@@ -750,6 +753,7 @@ function addAlbum(e, trackIdx) {
       ${esc(entry.artist || "")}<br>
       ${entry.date ? `${esc(fmtDate(entry.date))}<br>` : ""}
       ${entry.label ? `<button class="label-link jump" data-jump="${labelKey(entry.label)}" data-label="${labelKey(entry.label)}">${esc(entry.label)}</button><br>` : ""}
+      ${entry.bandcamp ? `<a class="alb-link" href="${esc(entry.bandcamp)}" target="_blank" rel="noopener">Bandcamp ↗</a>` : ""}
     </div>
     ${entry.genres.length ? `<div class="chips">${entry.genres.map(g =>
       `<span class="chip" title="Source: ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;

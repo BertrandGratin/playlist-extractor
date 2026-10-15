@@ -144,7 +144,7 @@ def label():
 
 
 IMAGE_HOSTS = ("dzcdn.net", "deezer.com", "theaudiodb.com", "wikimedia.org", "coverartarchive.org", "archive.org",
-               "genius.com", "ytimg.com", "ggpht.com", "googleusercontent.com", "discogs.com")
+               "genius.com", "ytimg.com", "ggpht.com", "googleusercontent.com", "discogs.com", "bcbits.com", "bandcamp.com")
 
 
 @app.get("/api/image")
