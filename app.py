@@ -77,12 +77,22 @@ def playlist():
     if not videos and info.get("id") and not entries:
         return jsonify(error="This link doesn't look like a playlist."), 400
 
-    # Playlist images (YouTube thumbnails), largest first, one per size.
-    thumbs, sizes = [], set()
+    # Playlist images (YouTube thumbnails), largest first, each picture once (YouTube lists the same picture
+    # in several sizes: ".../vi/ID/hqdefault.jpg" and ".../vi/ID/maxresdefault.jpg", or "...=w544-h544" and "...=w226-h226").
+    thumbs, seen = [], set()
     for t in sorted(info.get("thumbnails") or [], key=lambda t: -(t.get("width") or 0)):
-        if t.get("url") and t.get("width") not in sizes:
-            sizes.add(t.get("width"))
-            thumbs.append(t["url"])
+        url = t.get("url")
+        if not url or "no_thumbnail" in url:
+            continue
+        if "googleusercontent.com" in url or "ggpht.com" in url:
+            key = url.split("=")[0]
+        elif "ytimg.com/" in url:
+            key = url.rsplit("/", 1)[0]
+        else:
+            key = url
+        if key not in seen:
+            seen.add(key)
+            thumbs.append(url)
 
     return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos, hidden=hidden,
                    owner=info.get("uploader") or info.get("channel") or "",

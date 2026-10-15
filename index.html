@@ -84,10 +84,11 @@
   .pl-play .disc svg { width: 38px; height: 38px; }
   .pl-play:hover .disc { background: var(--magenta); color: #fff; transform: scale(1.06); }
   .pl-play:hover { color: #fff; }
-  .pl-imgs { display: flex; flex-direction: column; gap: 6px; }
-  .pl-main { width: 240px; aspect-ratio: 16 / 9; object-fit: cover; background: var(--panel-2); display: block; }
+  .pl-imgs { display: flex; flex-direction: column; gap: 6px; width: 240px; }
+  /* The image keeps its own shape: 16:9 video thumbnails and square album covers are never cut */
+  .pl-main { display: block; width: auto; height: auto; max-width: 240px; max-height: 180px; min-width: 120px; background: var(--panel-2); }
   .pl-thumbs { display: flex; gap: 4px; align-items: center; }
-  .pl-thumbs img { width: 48px; aspect-ratio: 16 / 9; object-fit: cover; cursor: pointer; opacity: .55; outline: 1px solid transparent; }
+  .pl-thumbs img { width: 48px; height: 36px; object-fit: contain; background: #000; cursor: pointer; opacity: .55; outline: 1px solid transparent; }
   .pl-thumbs img:hover, .pl-thumbs img.on { opacity: 1; outline-color: var(--magenta); }
   .pl-title { font-family: var(--serif); font-weight: 800; font-size: 38px; line-height: 1.05; margin: 0; }
   .count { font-family: var(--serif); font-size: 15px; color: #cfcfcf; margin-top: 6px; }
@@ -295,7 +296,7 @@
   @media (max-width: 560px) {
     body.landing h1 { font-size: 40px; }
     form, body.landing form { flex-direction: column; } .primary { padding: 10px; border-left: 0; border-top: 1px solid var(--border-2); }
-    .pl { grid-template-columns: 1fr; } .pl-main { width: 100%; } .pl-play { flex-direction: row; justify-self: start; } .pl-play .disc { width: 56px; height: 56px; } .pl-play .disc svg { width: 26px; height: 26px; } .pl-title { font-size: 28px; }
+    .pl { grid-template-columns: 1fr; } .pl-imgs { width: auto; } .pl-main { max-width: 100%; max-height: 260px; } .pl-play { flex-direction: row; justify-self: start; } .pl-play .disc { width: 56px; height: 56px; } .pl-play .disc svg { width: 26px; height: 26px; } .pl-title { font-size: 28px; }
     .acard { grid-template-columns: 90px 1fr; gap: 12px; } .a-main { width: 90px; height: 90px; } .a-name { font-size: 26px; }
     .albums { grid-template-columns: repeat(2, 1fr); }
   }
@@ -437,13 +438,38 @@ function renderPlaylist() {
   $("plTitle").textContent = data.title;
   $("count").innerHTML = [plural(data.count, "video"), data.owner && `by <span class="owner">${esc(data.owner)}</span>`,
     data.hidden && `<span title="Private, deleted or blocked videos, which YouTube also hides on the playlist page">${plural(data.hidden, "unavailable video")} hidden</span>`].filter(Boolean).join(" · ");
-  const th = data.thumbnails || [];
+  drawPlaylistImages(data.thumbnails || []);
+  dropPlaceholders(data.thumbnails || []);
+}
+function drawPlaylistImages(th) {
   $("plImgs").innerHTML = th.length ? `
     <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="" data-zoom="${esc(data.title)}" data-group="pl">
     <div class="pl-thumbs">
-      ${th.length > 1 ? th.map((u, k) => `<img src="${esc(u)}" data-u="${esc(u)}" class="${k ? "" : "on"}" alt="" data-zoom="${esc(data.title)}" data-group="pl-thumbs">`).join("") : ""}
+      ${th.length > 1 ? th.map((u, k) => `<img src="${esc(u)}" data-u="${esc(u)}" class="${k ? "" : "on"}" alt="">`).join("") : ""}
       <a class="ghost sm" id="plDl" href="${dl(th[0], data.title)}">⬇</a>
     </div>` : "";
+}
+/* YouTube sometimes lists a plain grey "no thumbnail" picture among the playlist images: drop the images that
+   fail to load or are a single flat colour (read through the local proxy so the pixels can be inspected). */
+async function dropPlaceholders(th) {
+  const run = runId;
+  const checks = await Promise.all(th.map(u => new Promise(res => {
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const c = document.createElement("canvas"); c.width = c.height = 24;
+        const g = c.getContext("2d"); g.drawImage(im, 0, 0, 24, 24);
+        const px = g.getImageData(0, 0, 24, 24).data; let sum = 0, sq = 0, n = 0;
+        for (let k = 0; k < px.length; k += 4) { const v = (px[k] + px[k + 1] + px[k + 2]) / 3; sum += v; sq += v * v; n++; }
+        res(Math.sqrt(sq / n - (sum / n) ** 2) > 12);  // a real picture has contrast
+      } catch { res(true); }
+    };
+    im.onerror = () => res(false);
+    im.src = u.startsWith("http") ? `/api/image?url=${encodeURIComponent(u)}` : u;
+  })));
+  const good = th.filter((_, k) => checks[k]);
+  if (run !== runId || good.length === th.length || !good.length) return;
+  data.thumbnails = good; drawPlaylistImages(good);
 }
 $("plImgs").addEventListener("click", e => {
   const im = e.target.closest(".pl-thumbs img"); if (!im) return;
@@ -821,8 +847,8 @@ document.addEventListener("keydown", ev => {
 /* ---------- Zoom & lightbox (any image with data-zoom) ---------- */
 let zTarget = null, lbList = [], lbPos = 0;
 function showZoomBtn(img) {
-  if (!img.getAttribute("src") || img.naturalWidth === 0) return;
   const r = img.getBoundingClientRect(), b = $("zbtn");
+  if (!img.getAttribute("src") || img.naturalWidth === 0 || r.width < 70) return;  // tiny images: the button would cover them
   zTarget = img;
   b.style.left = (r.right - 36) + "px"; b.style.top = (r.top + 6) + "px";
   b.classList.add("on");
