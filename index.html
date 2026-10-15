@@ -476,15 +476,34 @@ async function dropPlaceholders(th) {
         const g = c.getContext("2d"); g.drawImage(im, 0, 0, 24, 24);
         const px = g.getImageData(0, 0, 24, 24).data; let sum = 0, sq = 0, n = 0;
         for (let k = 0; k < px.length; k += 4) { const v = (px[k] + px[k + 1] + px[k + 2]) / 3; sum += v; sq += v * v; n++; }
-        res(Math.sqrt(sq / n - (sum / n) ** 2) > 12);  // a real picture has contrast
+        // YouTube's grey "…" stand-in is 120×90 and nearly flat; a real picture has contrast
+        res(!(im.naturalWidth === 120 && im.naturalHeight === 90) && Math.sqrt(sq / n - (sum / n) ** 2) > 12);
       } catch { res(true); }
     };
     im.onerror = () => res(false);
     im.src = u.startsWith("http") ? `/api/image?url=${encodeURIComponent(u)}` : u;
   })));
-  const good = th.filter((_, k) => checks[k]);
-  if (run !== runId || good.length === th.length || !good.length) return;
+  const bad = new Set(th.filter((_, k) => !checks[k]));
+  if (run !== runId || !bad.size) return;
+  const good = data.thumbnails.filter(u => !bad.has(u));
   data.thumbnails = good; drawPlaylistImages(good);
+  if (!good.length) maybeAlbumCover(true);
+}
+/* An album playlist ("Album - …", or most tracks from the same album) takes the album cover as its image. */
+function maybeAlbumCover(force = false) {
+  if (!data || data.coverSet) return;
+  const counts = new Map();
+  data.videos.forEach(v => { if (v.meta?.found && v.meta.cover) counts.set(albumKey(v.meta), (counts.get(albumKey(v.meta)) || 0) + 1); });
+  const [key, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+  const alb = key && albums.get(key);
+  if (!alb?.cover) return;
+  const t = s => (s || "").toLowerCase().replace(/^album\s*[-–:]\s*/, "").trim();
+  const sameName = t(data.title) === t(alb.title) || t(data.title).includes(t(alb.title));
+  const found = data.videos.filter(v => v.meta?.found).length;
+  if (!(sameName || force || (n >= 3 && n / Math.max(found, 1) >= 0.6))) return;
+  data.coverSet = true;
+  data.thumbnails = [alb.cover, ...(data.thumbnails || []).filter(u => u !== alb.cover)];
+  drawPlaylistImages(data.thumbnails);
 }
 $("plImgs").addEventListener("click", e => {
   const im = e.target.closest(".pl-thumbs img"); if (!im) return;
@@ -689,6 +708,7 @@ function addAlbum(e, trackIdx) {
     $("nAlbums").textContent = albums.size;
   }
   if (entry.label) addLabel(entry.label, key);
+  maybeAlbumCover(!(data.thumbnails || []).length);
   entry.tracks.add(trackIdx);
   const types = { album: "Album", single: "Single", ep: "EP", compile: "Compilation" };
   $(key).innerHTML = `

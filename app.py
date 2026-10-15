@@ -4,6 +4,7 @@ import socket
 import sys
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,6 +37,19 @@ def free_port(preferred=8765):
 @app.get("/")
 def index():
     return send_file(BASE / "index.html")
+
+
+def _image_exists(url):
+    """False for an image URL that answers an error (YouTube's grey "…" picture comes with a 404)."""
+    if not url.startswith("http"):
+        return True
+    try:
+        r = session.head(url, timeout=5, allow_redirects=True)
+        if r.status_code == 405:  # HEAD not allowed: ask for the first bytes only
+            r = session.get(url, timeout=5, stream=True); r.close()
+        return r.status_code < 400
+    except requests.RequestException:
+        return True  # unknown: keep it, the page drops it if it doesn't load
 
 
 @app.post("/api/playlist")
@@ -79,10 +93,14 @@ def playlist():
 
     # Playlist images (YouTube thumbnails), largest first, each picture once (YouTube lists the same picture
     # in several sizes: ".../vi/ID/hqdefault.jpg" and ".../vi/ID/maxresdefault.jpg", or "...=w544-h544" and "...=w226-h226").
+    # Sizes that don't exist (often maxresdefault) answer "404" with a grey "…" picture: those are left out.
+    cands = [t["url"] for t in sorted(info.get("thumbnails") or [], key=lambda t: -(t.get("width") or 0))
+             if t.get("url") and "no_thumbnail" not in t["url"]]
+    with ThreadPoolExecutor(8) as pool:
+        ok = list(pool.map(_image_exists, cands[:12]))
     thumbs, seen = [], set()
-    for t in sorted(info.get("thumbnails") or [], key=lambda t: -(t.get("width") or 0)):
-        url = t.get("url")
-        if not url or "no_thumbnail" in url:
+    for url, exists in zip(cands, ok):
+        if not exists:
             continue
         if "googleusercontent.com" in url or "ggpht.com" in url:
             key = url.split("=")[0]
@@ -93,6 +111,10 @@ def playlist():
         if key not in seen:
             seen.add(key)
             thumbs.append(url)
+    if not thumbs:  # fall back on the first video's thumbnail, which always exists
+        first = next((v["url"] for v in videos if "watch?v=" in v["url"]), None)
+        if first:
+            thumbs.append(f"https://i.ytimg.com/vi/{first.split('watch?v=')[1][:11]}/hqdefault.jpg")
 
     return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos, hidden=hidden,
                    owner=info.get("uploader") or info.get("channel") or "",
