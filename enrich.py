@@ -71,36 +71,65 @@ def _sim(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
-def parse_title(title, channel=""):
-    """Guesses (artist, title) from the YouTube title and channel name."""
+# Titles that say nothing about the song: matching them on the title alone picks a random artist's "Untitled".
+GENERIC_TITLE = re.compile(r"^(untitled( track)?|no title|sans titre|unknown|intro|outro|interlude|skit|demo|"
+                           r"instrumental|(track|piste|titre) ?\d*|\d+)$", re.I)
+
+
+def parse_title_ex(title, channel=""):
+    """Guesses (artist, title, artist_is_reliable) from the YouTube title and channel name.
+
+    The artist is reliable when it comes from an "Artist - Topic" channel or an "Artist - Title" video title;
+    a plain channel name is only a guess (it may be a label, a fan account or the person who uploaded it).
+    """
     clean = NOISE.sub("", title).strip()
     clean = re.sub(r"\s*\|.*$", "", clean).strip()  # "Title | Album" etc.
     if channel.endswith(" - Topic"):  # auto-generated "Artist - Topic" channels
-        return channel[:-8].strip(), clean
+        return channel[:-8].strip(), clean, True
     parts = re.split(r"\s+[-–—]\s+", clean, maxsplit=1)
     if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip().strip('"“”')
+        return parts[0].strip(), parts[1].strip().strip('"“”'), True
     artist = re.sub(r"(VEVO|Official|Officiel)$", "", channel, flags=re.I).strip()
-    return artist, clean
+    return artist, clean, False
 
 
-def _search_deezer(artist, track):
+def parse_title(title, channel=""):
+    """Guesses (artist, title) from the YouTube title and channel name."""
+    return parse_title_ex(title, channel)[:2]
+
+
+def _search_deezer(artist, track, artist_reliable=True):
+    """Deezer tracks matching the guessed artist and title, best first ([] when nothing matches well enough).
+
+    A candidate must match the title, and the artist too whenever one is known: summing both scores used to let
+    a perfect title with an unrelated artist through (e.g. "(untitled)" → Vast's "Untitled"). Searching on the
+    title alone is only allowed when the artist is a mere guess and the title is distinctive.
+    """
     main_artist = FEAT.sub("", artist).strip()
-    short_track = FEAT.sub("", re.sub(r"\s*[\(\[].*?[\)\]]", "", track)).strip() or track
+    short_track = FEAT.sub("", re.sub(r"\s*[\(\[].*?[\)\]]", "", track)).strip() or track.strip("()[] ")
+    if not short_track:
+        return []
+    generic = bool(GENERIC_TITLE.match(short_track))
+    artist_sim = lambda t: max(_sim(t["artist"]["name"], artist), _sim(t["artist"]["name"], main_artist)) if artist else 0
     queries = []
     if artist:
-        queries.append(f'artist:"{artist}" track:"{short_track}"')
+        queries.append((f'artist:"{artist}" track:"{short_track}"', True))
         if main_artist != artist:
-            queries.append(f'artist:"{main_artist}" track:"{short_track}"')
-        queries.append(f"{main_artist} {short_track}")
-    queries.append(short_track)
-    for q in queries:
+            queries.append((f'artist:"{main_artist}" track:"{short_track}"', True))
+        queries.append((f"{main_artist} {short_track}", True))
+    if not generic and (not artist or not artist_reliable) and len(short_track) >= 4:
+        queries.append((short_track, False))
+    for q, need_artist in queries:
         data = (_get("https://api.deezer.com/search", q=q, limit=10) or {}).get("data") or []
         scored = []
         for t in data:
-            score = _sim(t["title"], short_track) + (max(_sim(t["artist"]["name"], artist), _sim(t["artist"]["name"], main_artist)) if artist else 0)
-            scored.append((score, t))
-        scored = [s for s in scored if s[0] > (1.1 if artist else 0.6)]
+            ts = _sim(t["title"], short_track)
+            if need_artist:
+                a = artist_sim(t)
+                if ts >= 0.6 and a >= 0.7:
+                    scored.append((ts + a, t))
+            elif ts >= 0.9:
+                scored.append((ts, t))
         if scored:
             scored.sort(key=lambda s: -s[0])
             return [t for _, t in scored[:5]]
@@ -460,8 +489,8 @@ def track_audio_features(track_id=None, video_url="", artist="", title=""):
 
 
 def enrich(title, channel="", video_url=""):
-    artist_guess, track_guess = parse_title(title, channel)
-    candidates = _search_deezer(artist_guess, track_guess)
+    artist_guess, track_guess, artist_reliable = parse_title_ex(title, channel)
+    candidates = _search_deezer(artist_guess, track_guess, artist_reliable)
     if not candidates:
         return {"found": False, "guess": {"artist": artist_guess, "track": track_guess},
                 **track_audio_features(None, video_url, artist_guess, track_guess)}
