@@ -435,7 +435,8 @@ function fmtDate(d) {
 /* ---------- Playlist header ---------- */
 function renderPlaylist() {
   $("plTitle").textContent = data.title;
-  $("count").innerHTML = [plural(data.count, "video"), data.owner && `by <span class="owner">${esc(data.owner)}</span>`].filter(Boolean).join(" · ");
+  $("count").innerHTML = [plural(data.count, "video"), data.owner && `by <span class="owner">${esc(data.owner)}</span>`,
+    data.hidden && `<span title="Private, deleted or blocked videos, which YouTube also hides on the playlist page">${plural(data.hidden, "unavailable video")} hidden</span>`].filter(Boolean).join(" · ");
   const th = data.thumbnails || [];
   $("plImgs").innerHTML = th.length ? `
     <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="" data-zoom="${esc(data.title)}" data-group="pl">

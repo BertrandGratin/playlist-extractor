@@ -13,6 +13,8 @@ from yt_dlp import YoutubeDL
 
 from enrich import enrich, session
 from titles import clean_title
+
+UNAVAILABLE = re.compile(r"^\[(private|deleted|unavailable|removed)( video)?\]$", re.I)
 from updater import VERSION, update_if_needed
 
 app = Flask(__name__)
@@ -51,13 +53,16 @@ def playlist():
         return jsonify(error=f"Couldn't read this playlist: {msg}"), 400
 
     entries = info.get("entries") or []
-    videos = []
+    videos, hidden = [], 0
     for e in entries:
         if not e:
             continue
         vid = e.get("id")
-        title = e.get("title") or "(untitled)"
-        if title in ("[Private video]", "[Deleted video]"):
+        title = (e.get("title") or "").strip()
+        # Unavailable videos (private, deleted, blocked in this country…) still appear in the playlist data, with
+        # no title or a placeholder one, while YouTube hides them on the playlist page: skip them too.
+        if not title or UNAVAILABLE.match(title) or e.get("availability") in ("private", "needs_auth", "subscriber_only"):
+            hidden += 1
             continue
         name, tags = clean_title(title)
         videos.append({
@@ -79,7 +84,7 @@ def playlist():
             sizes.add(t.get("width"))
             thumbs.append(t["url"])
 
-    return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos,
+    return jsonify(title=info.get("title") or "Playlist", count=len(videos), videos=videos, hidden=hidden,
                    owner=info.get("uploader") or info.get("channel") or "",
                    description=info.get("description") or "", thumbnails=thumbs[:4])
 
