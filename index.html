@@ -296,6 +296,26 @@
   .lb-nav { top: 50%; transform: translateY(-50%); font-size: 44px; }
   .lb-prev { left: 10px; } .lb-next { right: 10px; }
 
+  /* Results on a wide screen: artists, albums and labels on the left, tracks on the right, each scrolling on its own */
+  .cols { display: block; }
+  @media (min-width: 1000px) {
+    body.split { --pb: 0px; }
+    body.split.has-player { --pb: 96px; padding-bottom: 0; }
+    body.split .wrap { max-width: 1680px; height: calc(100vh - var(--pb)); display: flex; flex-direction: column; padding-bottom: 0;
+                       box-sizing: border-box; }
+    body.split .results { flex: 1; min-height: 0; display: flex !important; flex-direction: column; }
+    body.split .cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(420px, 5fr) 7fr; gap: 16px; margin-top: 14px; }
+    body.split .col { overflow-y: auto; min-height: 0; padding-right: 6px; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+    body.split .col::-webkit-scrollbar { width: 8px; }
+    body.split .col::-webkit-scrollbar-thumb { background: #2c2c2c; }
+    body.split .col > details.sec:first-child { margin-top: 0; }
+    body.split .col-right .thead { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+    body.split .col .acard { grid-template-columns: 110px 1fr; gap: 14px; }
+    body.split .col .a-main { width: 110px; height: 110px; }
+    body.split .col .a-name { font-size: 28px; }
+    body.split .foot { padding: 8px 0; }
+  }
+
   @media (max-width: 820px) {
     .hero { flex-wrap: wrap; } form { flex-basis: 100%; }
     .thead { display: none; }
@@ -350,6 +370,8 @@
       <button class="pl-play" id="playAll" title="Play the playlist from the first track"><span class="disc" id="playAllIcon"></span><span id="playAllLabel">Play all</span></button>
     </div>
 
+    <div class="cols">
+    <div class="col col-left" id="colLeft">
     <details class="sec" open>
       <summary>Artists <span class="badge" id="nArtists">0</span></summary>
       <div class="sec-body"><div class="artists-list" id="artists"><div class="empty">Searching…</div></div></div>
@@ -365,6 +387,8 @@
       <div class="sec-body"><div class="artists-list" id="labels"><div class="empty">Searching…</div></div></div>
     </details>
 
+    </div>
+    <div class="col col-right" id="colRight">
     <details class="sec" open>
       <summary>Tracks <span class="badge" id="nTracks">0</span></summary>
       <div class="sec-body" style="padding:0">
@@ -374,7 +398,10 @@
         </div>
       </div>
     </details>
+    </div>
+    </div>
   </section>
+  <footer class="foot" id="foot"></footer>
 </div>
 <div class="pv" id="pv"><div id="ytp"></div>
   <div class="pv-msg" id="pvMsg"><span>This video can't be played inside the app.</span><a id="pvOpen" href="#" target="_blank" rel="noopener">Open on YouTube ↗</a></div></div>
@@ -400,7 +427,6 @@
   <button class="lb-nav lb-next" id="lbNext" title="Next (→)">›</button>
 </div>
 <div class="toast" id="toast">Copied!</div>
-<footer class="foot" id="foot"></footer>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -563,7 +589,7 @@ document.addEventListener("mouseover", ev => {
 });
 document.addEventListener("focusin", ev => { const el = ev.target.closest?.(".conf"); if (el) showTip(el); });
 document.addEventListener("click", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
-addEventListener("scroll", hideTip, { passive: true });
+addEventListener("scroll", hideTip, { passive: true, capture: true });
 function renderTrackInfo(i) {
   const e = data.videos[i].meta, row = $("row" + i), cell = c => row.querySelector(".c-" + c);
   if (!e?.found) {
@@ -822,7 +848,7 @@ $("form").onsubmit = async e => {
     $("nArtists").textContent = $("nAlbums").textContent = $("nLabels").textContent = "0";
     renderPlaylist(); renderTracks();
     document.body.classList.remove("landing");
-    $("results").style.display = "block";
+    $("results").style.display = "block"; document.body.classList.add("split");
     enrichAll(id);
   } catch (err) {
     $("error").textContent = err.message; $("error").style.display = "block";
@@ -959,7 +985,7 @@ document.addEventListener("touchstart", ev => {  // touch screens: tapping an im
   const img = ev.target.closest?.("img[data-zoom]");
   img ? showZoomBtn(img) : !ev.target.closest?.("#zbtn") && $("zbtn").classList.remove("on");
 }, { passive: true });
-addEventListener("scroll", () => $("zbtn").classList.remove("on"), { passive: true });
+addEventListener("scroll", () => $("zbtn").classList.remove("on"), { passive: true, capture: true });
 $("zbtn").onclick = () => zTarget && openLightbox(zTarget);
 function openLightbox(img) {
   const g = img.dataset.group;
