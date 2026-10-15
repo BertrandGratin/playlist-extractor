@@ -144,7 +144,6 @@
   .strip a { position: absolute; top: 0; right: 0; background: #000; color: #fff; font-size: 11px; padding: 1px 6px;
              text-decoration: none; opacity: 0; transition: .15s; }
   .strip .shot:hover a { opacity: 1; }
-  .strip a.zoom { right: auto; left: 0; }
 
   /* Albums */
   .albums { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
@@ -265,6 +264,27 @@
     body.has-player { padding-bottom: 76px; } .pv { bottom: 76px; width: 200px; height: 113px; }
   }
 
+  /* Zoom: a magnifier appears over any image on hover; it opens the image in a lightbox */
+  .zbtn { position: fixed; z-index: 45; width: 30px; height: 30px; display: none; align-items: center; justify-content: center;
+          background: rgba(0,0,0,.75); color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; cursor: zoom-in; padding: 0; }
+  .zbtn.on { display: flex; }
+  .zbtn:hover { background: var(--magenta); border-color: var(--magenta); }
+  .lb { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.92); display: none; align-items: center;
+        justify-content: center; flex-direction: column; gap: 12px; padding: 24px; }
+  .lb.on { display: flex; }
+  .lb img { max-width: min(92vw, 1400px); max-height: calc(100vh - 120px); object-fit: contain; box-shadow: 0 20px 60px rgba(0,0,0,.8);
+            background: #111; }
+  .lb-bar { display: flex; align-items: center; gap: 14px; font-family: var(--serif); font-size: 15px; color: #ddd; max-width: 92vw; }
+  .lb-cap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-n { color: var(--muted); font-size: 13px; }
+  .lb-bar a { color: #fff; text-decoration: none; border: 1px solid #444; padding: 3px 10px; font-weight: 700; font-size: 13px; }
+  .lb-bar a:hover { background: var(--purple); border-color: var(--purple); }
+  .lb-x, .lb-nav { position: absolute; background: none; border: 0; color: #fff; cursor: pointer; font-size: 28px; padding: 10px 14px; opacity: .75; }
+  .lb-x:hover, .lb-nav:hover { opacity: 1; color: var(--magenta); }
+  .lb-x { top: 10px; right: 14px; }
+  .lb-nav { top: 50%; transform: translateY(-50%); font-size: 44px; }
+  .lb-prev { left: 10px; } .lb-next { right: 10px; }
+
   @media (max-width: 820px) {
     .hero { flex-wrap: wrap; } form { flex-basis: 100%; }
     .thead { display: none; }
@@ -343,7 +363,7 @@
 <div class="pv" id="pv"><div id="ytp"></div>
   <div class="pv-msg" id="pvMsg"><span>This video can't be played inside the app.</span><a id="pvOpen" href="#" target="_blank" rel="noopener">Open on YouTube ↗</a></div></div>
 <div class="player" id="player">
-  <img class="p-cover" id="pCover" alt="" onerror="this.style.visibility='hidden'" onload="this.style.visibility=''">
+  <img class="p-cover" id="pCover" alt="" data-zoom="" data-group="player" onerror="this.style.visibility='hidden'" onload="this.style.visibility=''">
   <div class="p-info"><div class="p-title" id="pTitle"></div><div class="p-sub" id="pSub"></div></div>
   <div class="p-ctrl">
     <button class="p-btn" id="pPrev" title="Previous"></button>
@@ -354,6 +374,14 @@
   <input type="range" class="p-vol" id="pVol" min="0" max="100" value="80" title="Volume">
   <button class="p-btn" id="pBig" title="Bigger / smaller video"></button>
   <button class="p-btn" id="pClose" title="Close the player">✕</button>
+</div>
+<button class="zbtn" id="zbtn" title="View full size"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8M10.5 7.5v6M7.5 10.5h6"/></svg></button>
+<div class="lb" id="lb">
+  <button class="lb-x" id="lbX" title="Close (Esc)">✕</button>
+  <button class="lb-nav lb-prev" id="lbPrev" title="Previous (←)">‹</button>
+  <img id="lbImg" alt="">
+  <div class="lb-bar"><span class="lb-cap" id="lbCap"></span><span class="lb-n" id="lbN"></span><a id="lbDl" href="#">⬇ Download</a></div>
+  <button class="lb-nav lb-next" id="lbNext" title="Next (→)">›</button>
 </div>
 <div class="toast" id="toast">Copied!</div>
 <footer class="foot" id="foot"></footer>
@@ -410,9 +438,9 @@ function renderPlaylist() {
   $("count").innerHTML = [plural(data.count, "video"), data.owner && `by <span class="owner">${esc(data.owner)}</span>`].filter(Boolean).join(" · ");
   const th = data.thumbnails || [];
   $("plImgs").innerHTML = th.length ? `
-    <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="">
+    <img class="pl-main" id="plMain" src="${esc(th[0])}" alt="" data-zoom="${esc(data.title)}" data-group="pl">
     <div class="pl-thumbs">
-      ${th.length > 1 ? th.map((u, k) => `<img src="${esc(u)}" data-u="${esc(u)}" class="${k ? "" : "on"}" alt="">`).join("") : ""}
+      ${th.length > 1 ? th.map((u, k) => `<img src="${esc(u)}" data-u="${esc(u)}" class="${k ? "" : "on"}" alt="" data-zoom="${esc(data.title)}" data-group="pl-thumbs">`).join("") : ""}
       <a class="ghost sm" id="plDl" href="${dl(th[0], data.title)}">⬇</a>
     </div>` : "";
 }
@@ -508,7 +536,7 @@ function drawArtist(a) {
   const genres = a.all_genres?.length ? a.all_genres : a.genres || [];
   const links = Object.entries(a.links || {}).filter(([, u]) => u);
   el.innerHTML = `
-    ${main ? `<img class="a-main" src="${esc(main.url)}" alt="${esc(a.name)}">` : `<div class="a-main"></div>`}
+    ${main ? `<img class="a-main" src="${esc(main.url)}" alt="${esc(a.name)}" data-zoom="${esc(a.name)}" data-group="main-${a.key}">` : `<div class="a-main"></div>`}
     <div style="min-width:0">
       <p class="a-name">${esc(a.name)} ${copyBtn(a.name, "artist")}</p>
       <div class="a-meta">${plural(a.tracks.size, "track")} in the playlist</div>
@@ -528,8 +556,7 @@ function drawArtist(a) {
     </div>
     ${imgs.length ? `<div class="strip">${imgs.map((im, k) => `
       <div class="shot ${k === a.img ? "on" : ""}" title="${esc(im.source)}">
-        <img src="${esc(im.url)}" data-pick="${a.key}" data-k="${k}" loading="lazy" alt="" onerror="this.closest('.shot').remove()">
-        <a class="zoom" href="${esc(im.url)}" target="_blank" rel="noopener" title="View full size">⤢</a>
+        <img src="${esc(im.url)}" data-pick="${a.key}" data-k="${k}" loading="lazy" alt="" onerror="this.closest('.shot').remove()" data-zoom="${esc(`${a.name} · ${im.source}`)}" data-group="${a.key}">
         <a href="${dl(im.url, `${a.name} ${k + 1}`)}" title="Download">⬇</a>
         <div class="src">${esc(im.source)}</div>
       </div>`).join("")}</div>` : ""}`;
@@ -562,7 +589,7 @@ function addAlbum(e, trackIdx) {
   const types = { album: "Album", single: "Single", ep: "EP", compile: "Compilation" };
   $(key).innerHTML = `
     <div class="alb-cover">
-      ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy">` : `<img alt="">`}
+      ${entry.cover ? `<img src="${esc(entry.cover)}" alt="" loading="lazy" data-zoom="${esc(`${entry.artist} - ${entry.title}`)}" data-group="albums">` : `<img alt="">`}
       ${entry.type ? `<span class="alb-type ${esc(entry.type)}">${esc(types[entry.type] || entry.type)}</span>` : ""}
       <span class="alb-count" title="Tracks in the playlist">${entry.tracks.size}</span>
       ${entry.cover ? `<a href="${dl(entry.cover, `${entry.artist} - ${entry.title}`)}" title="Download the cover">⬇ Cover</a>` : ""}
@@ -729,6 +756,7 @@ async function playTrack(i, auto = false) {
   const e = v.meta || {};
   $("pTitle").textContent = e.found ? e.track : (v.name || v.title);
   $("pSub").textContent = e.found ? e.artists.map(a => a.name).join(", ") + (e.album ? " · " + e.album : "") : (v.channel || "");
+  $("pCover").dataset.zoom = $("pTitle").textContent;
   $("pCover").src = e.cover || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
   $("pvOpen").href = v.url; $("pvMsg").classList.remove("on");
   $("pCur").textContent = $("pDur").textContent = "0:00"; $("pSeek").value = 0;
@@ -789,6 +817,54 @@ document.addEventListener("keydown", ev => {
   if (ev.target.closest("input, textarea, button, [contenteditable]")) return;
   ev.preventDefault(); togglePlay();
 });
+/* ---------- Zoom & lightbox (any image with data-zoom) ---------- */
+let zTarget = null, lbList = [], lbPos = 0;
+function showZoomBtn(img) {
+  if (!img.getAttribute("src") || img.naturalWidth === 0) return;
+  const r = img.getBoundingClientRect(), b = $("zbtn");
+  zTarget = img;
+  b.style.left = (r.right - 36) + "px"; b.style.top = (r.top + 6) + "px";
+  b.classList.add("on");
+}
+document.addEventListener("mouseover", ev => {
+  const img = ev.target.closest?.("img[data-zoom]");
+  if (img) showZoomBtn(img);
+  else if (!ev.target.closest?.("#zbtn")) $("zbtn").classList.remove("on");
+});
+document.addEventListener("touchstart", ev => {  // touch screens: tapping an image shows its magnifier
+  const img = ev.target.closest?.("img[data-zoom]");
+  img ? showZoomBtn(img) : !ev.target.closest?.("#zbtn") && $("zbtn").classList.remove("on");
+}, { passive: true });
+addEventListener("scroll", () => $("zbtn").classList.remove("on"), { passive: true });
+$("zbtn").onclick = () => zTarget && openLightbox(zTarget);
+function openLightbox(img) {
+  const g = img.dataset.group;
+  lbList = [...document.querySelectorAll(`img[data-zoom][data-group="${CSS.escape(g)}"]`)].filter(x => x.getAttribute("src") && x.naturalWidth);
+  lbPos = Math.max(0, lbList.indexOf(img));
+  if (!lbList.length) { lbList = [img]; lbPos = 0; }
+  $("zbtn").classList.remove("on"); $("lb").classList.add("on"); showLb();
+}
+function showLb() {
+  const img = lbList[lbPos], url = img.currentSrc || img.src, name = img.dataset.zoom || "image";
+  $("lbImg").src = url; $("lbCap").textContent = name;
+  $("lbN").textContent = lbList.length > 1 ? `${lbPos + 1} / ${lbList.length}` : "";
+  $("lbDl").href = url.startsWith("http") ? dl(url, name) : url;
+  $("lbPrev").style.display = $("lbNext").style.display = lbList.length > 1 ? "" : "none";
+}
+const lbStep = d => { lbPos = (lbPos + d + lbList.length) % lbList.length; showLb(); };
+const closeLb = () => $("lb").classList.remove("on");
+$("lbPrev").onclick = e => { e.stopPropagation(); lbStep(-1); };
+$("lbNext").onclick = e => { e.stopPropagation(); lbStep(1); };
+$("lbX").onclick = closeLb;
+$("lb").onclick = e => { if (e.target === $("lb")) closeLb(); };
+document.addEventListener("keydown", ev => {
+  if (!$("lb").classList.contains("on")) return;
+  if (ev.key === "Escape") closeLb();
+  else if (ev.key === "ArrowLeft") lbStep(-1);
+  else if (ev.key === "ArrowRight") lbStep(1);
+  else return;
+  ev.preventDefault(); ev.stopPropagation();
+}, true);
 </script>
 </body>
 </html>
