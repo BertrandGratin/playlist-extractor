@@ -11,6 +11,7 @@ Free sources, no API key needed:
 - GetSongBPM    : BPM and key cross-check (needs a free API key, added at build time)
 """
 import html
+import json
 import os
 import re
 import tempfile
@@ -423,6 +424,35 @@ def bandcamp_album(artist, title):
 
 
 @lru_cache(maxsize=1024)
+def bandcamp_formats(url):
+    """Formats sold on a Bandcamp album page: the physical editions ("Vinyl LP", "Cassette", "Compact Disc (CD)"…)
+    and the digital album. -> ((family, edition), ...)"""
+    try:
+        page = session.get(url, timeout=10).text
+    except requests.RequestException:
+        return ()
+    m = re.search(r'data-tralbum="([^"]+)"', page)
+    try:
+        data = json.loads(html.unescape(m.group(1))) if m else {}
+    except ValueError:
+        return ()
+    seller = re.sub(r"^https?://([\w-]+)\.bandcamp\.com.*", r"\1", url)
+    album_year = re.search(r"\d{4}", str((data.get("current") or {}).get("release_date") or ""))
+    out = []
+    for p in data.get("packages") or []:
+        kind = p.get("type_name") or ""
+        if not kind or "box" in kind.lower() and "vinyl" not in kind.lower():
+            continue
+        year = re.search(r"\d{4}", str(p.get("release_date") or p.get("new_date") or "")) or album_year
+        bits = [x for x in (year.group(0) if year else None, f"{seller}.bandcamp.com", kind, p.get("title")) if x]
+        if _format_family(kind) in FORMAT_ORDER:  # not merch
+            out.append((_format_family(kind), " · ".join(dict.fromkeys(bits))))
+    if data.get("trackinfo"):
+        out.append(("Digital", " · ".join(x for x in (album_year.group(0) if album_year else None, f"{seller}.bandcamp.com", "Digital album") if x)))
+    return tuple(out)
+
+
+@lru_cache(maxsize=1024)
 def bandcamp_bio(url):
     """The "about" text of a Bandcamp artist or label page."""
     try:
@@ -828,9 +858,10 @@ def album_label(deezer_label, yt, rgid):
 
 
 @lru_cache(maxsize=512)
-def album_formats(rgid):
-    """Every format the album was released in (vinyl, CD, cassette, digital…), from its MusicBrainz editions and
-    its Discogs versions, with the list of editions for each format."""
+def album_formats(rgid, bandcamp_url=None, deezer_date=None):
+    """Every format the album was released in (vinyl, CD, cassette, digital…), from its MusicBrainz editions, its
+    Discogs versions, the physical editions sold on its Bandcamp page and Deezer (digital), with the list of
+    editions for each format."""
     fams = {}
 
     def add(fam, edition, source):
@@ -840,7 +871,7 @@ def album_formats(rgid):
         f["editions"].setdefault(source, []).append(edition)
         f["sources"].add(source)
 
-    for r in _mb_releases(rgid):
+    for r in _mb_releases(rgid) if rgid else ():
         media = [m.get("format") for m in r.get("media") or [] if m.get("format")]
         label = next(((li.get("label") or {}).get("name") for li in r.get("label-info") or [] if li.get("label")), None)
         country = {"XW": "Worldwide", "XE": "Europe", "XU": None}.get(r.get("country"), r.get("country"))
@@ -851,12 +882,18 @@ def album_formats(rgid):
         for fam, ms in by_fam.items():
             add(fam, " · ".join(bits + [_media_count(ms)]), "MusicBrainz")
 
-    for v in _discogs_versions(rgid):
-            bits = [x for x in (str(v.get("released") or "")[:4], v.get("country"), v.get("label")) if x]
-            for major in dict.fromkeys(v.get("major_formats") or [v.get("format", "").split(",")[0]]):
-                if major in ("Box Set", "All Media"):
-                    continue
-                add(_format_family(major), " · ".join(bits + [v.get("format") or major]), "Discogs")
+    for v in _discogs_versions(rgid) if rgid else ():
+        bits = [x for x in (str(v.get("released") or "")[:4], v.get("country"), v.get("label")) if x]
+        for major in dict.fromkeys(v.get("major_formats") or [v.get("format", "").split(",")[0]]):
+            if major in ("Box Set", "All Media"):
+                continue
+            add(_format_family(major), " · ".join(bits + [v.get("format") or major]), "Discogs")
+
+    for fam, edition in bandcamp_formats(bandcamp_url) if bandcamp_url else ():
+        add(fam, edition, "Bandcamp")
+
+    if deezer_date:  # on Deezer, so out digitally
+        add("Digital", f"{deezer_date[:4]} · Deezer", "Deezer")
 
     out = []
     for f in fams.values():
@@ -1078,7 +1115,8 @@ def enrich(title, channel="", video_url="", playlist=""):
     _add_genres(genres, mb_release_group_genres(main, track["title"], alb_info.get("title")), "MusicBrainz (album)")
     rgid, rg_sim = mb_release_group(main, track["title"], alb_info.get("title"))
     rgid = rgid if rg_sim > 0.8 else None
-    formats = album_formats(rgid) if rgid else []
+    bandcamp_url = bandcamp_album((album.get("artist") or {}).get("name") or main, alb_info.get("title") or "")
+    formats = album_formats(rgid, bandcamp_url, album.get("release_date") or full_track.get("release_date"))
     label = album_label(album.get("label"), yt, rgid)
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
     _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (track)")
@@ -1105,6 +1143,6 @@ def enrich(title, channel="", video_url="", playlist=""):
         "artists": artist_details,
         "deezer_url": track.get("link"),
         "album_formats": formats,
-        "bandcamp_url": bandcamp_album((album.get("artist") or {}).get("name") or main, alb_info.get("title") or ""),
+        "bandcamp_url": bandcamp_url,
         **track_audio_features(track["id"], video_url, main, track.get("title") or track_guess),
     }
