@@ -575,8 +575,14 @@ const CONF_TEXT = {
   medium: ["?", "mid", "Probably right", "The audio analysis is fairly sure, but no other source fully confirms it (sometimes only by half or double tempo). Worth a quick check by ear."],
   low: ["?", "lo", "Uncertain", "The sources disagree or the analysis is unsure. Check it by ear before relying on it."],
 };
-function confMark(what, level, sources, alts) {
-  const c = CONF_TEXT[level];
+const LABEL_TEXT = {
+  high: "Several sources (YouTube, Deezer, MusicBrainz, Discogs) credit this label.",
+  medium: "Only one source gives this label, the others say nothing. Probably right.",
+  low: "The sources credit different labels: check the other possible labels below.",
+};
+function confMark(what, level, sources, alts, texts) {
+  const c = CONF_TEXT[level] && [...CONF_TEXT[level]];
+  if (c && texts?.[level]) c[3] = texts[level];
   if (!c) return "";
   let tip = `<div class="tip-h ${c[1]}">${c[0]} ${esc(c[2])}</div><p>${esc(c[3])}</p>`;
   if (sources?.length) tip += `<div class="tip-l">Sources</div><p>${sources.map(esc).join(" + ")}</p>`;
@@ -702,6 +708,14 @@ function addLabel(name, albumK) {
   entry.albums.add(albumK);
   drawArtist(entry);
 }
+/* An album's label was corrected by a better-sourced track: the old label loses the album (and its card when empty) */
+function dropLabel(name, albumK) {
+  const key = labelKey(name), entry = labels.get(key);
+  if (!entry) return;
+  entry.albums.delete(albumK);
+  if (entry.albums.size) return drawArtist(entry);
+  labels.delete(key); $(key)?.remove(); $("nLabels").textContent = labels.size;
+}
 function loadLabel(key) {
   const entry = labels.get(key);
   if (!entry) return Promise.resolve();
@@ -807,7 +821,7 @@ function addAlbum(e, trackIdx) {
   let entry = albums.get(key);
   if (!entry) {
     entry = { key, tracks: new Set(), title: e.album, artist: e.album_artist, cover: e.cover, date: e.release_date,
-              label: e.label, type: e.record_type, genres: e.album_genres || [] };
+              label: e.label, labelConf: e.label_confidence, labelSources: e.label_sources, labelAlts: e.label_alternatives, labelScore: e.label_score, type: e.record_type, genres: e.album_genres || [] };
     albums.set(key, entry);
     if (albums.size === 1) $("albums").innerHTML = "";
     const el = document.createElement("div");
@@ -815,6 +829,11 @@ function addAlbum(e, trackIdx) {
     $("nAlbums").textContent = albums.size;
   }
   entry.bandcamp = entry.bandcamp || e.bandcamp_url;
+  const rank = c => ({ high: 3, medium: 2, low: 1 })[c] || 0;  // the track whose sources agree best gives the album's label
+  if (e.label && (rank(e.label_confidence) > rank(entry.labelConf) || (rank(e.label_confidence) === rank(entry.labelConf) && (e.label_score || 0) > (entry.labelScore || 0)))) {
+    if (entry.label && labelKey(entry.label) !== labelKey(e.label)) dropLabel(entry.label, key);
+    Object.assign(entry, { label: e.label, labelConf: e.label_confidence, labelSources: e.label_sources, labelAlts: e.label_alternatives, labelScore: e.label_score });
+  }
   if (!entry.formats?.length) entry.formats = e.album_formats || [];
   if (entry.label) addLabel(entry.label, key);
   maybeAlbumCover(!(data.thumbnails || []).length);
@@ -831,7 +850,7 @@ function addAlbum(e, trackIdx) {
     <div class="alb-sub">
       ${esc(entry.artist || "")}<br>
       ${entry.date ? `${esc(fmtDate(entry.date))}<br>` : ""}
-      ${entry.label ? `<button class="label-link jump" data-jump="${labelKey(entry.label)}" data-label="${labelKey(entry.label)}">${esc(entry.label)}</button><br>` : ""}
+      ${entry.label ? `<button class="label-link jump" data-jump="${labelKey(entry.label)}" data-label="${labelKey(entry.label)}">${esc(entry.label)}</button>${confMark("labels", entry.labelConf, entry.labelSources, entry.labelAlts, LABEL_TEXT)}<br>` : ""}
       ${entry.bandcamp ? `<a class="alb-link" href="${esc(entry.bandcamp)}" target="_blank" rel="noopener">Bandcamp ↗</a>` : ""}
     </div>
     ${entry.formats.length ? `<div class="chips fmts">${fmtChips(entry.formats)}</div>` : ""}
@@ -853,7 +872,7 @@ async function enrichAll(id) {
       const i = next++, v = data.videos[i];
       try {
         const r = await fetch("/api/enrich", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: v.title, channel: v.channel, url: v.url }) });
+          body: JSON.stringify({ title: v.title, channel: v.channel, url: v.url, playlist: data.title }) });
         v.meta = await r.json();
       } catch { v.meta = { found: false }; }
       if (id !== runId) return;

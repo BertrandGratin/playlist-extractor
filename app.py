@@ -130,7 +130,7 @@ def version():
 def enrich_video():
     body = request.get_json(silent=True) or {}
     try:
-        return jsonify(enrich(body.get("title", ""), body.get("channel", ""), body.get("url", "")))
+        return jsonify(enrich(body.get("title", ""), body.get("channel", ""), body.get("url", ""), body.get("playlist", "")))
     except Exception as exc:
         return jsonify(found=False, error=str(exc))
 

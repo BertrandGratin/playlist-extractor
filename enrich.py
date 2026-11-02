@@ -147,8 +147,34 @@ def deezer_track(track_id):
     return _get(f"https://api.deezer.com/track/{track_id}") or {}
 
 
-def _pick_album(candidates):
-    """Among the best matches, prefers the original album (not a compilation), the oldest one."""
+def _album_title(t):
+    """"Album - Discovery (Deluxe Edition)" -> "discovery" (to compare album names)."""
+    t = re.sub(r"^album\s*[-–:]\s*", "", (t or "").strip(), flags=re.I)
+    return re.sub(r"\s*[\(\[].*?[\)\]]", "", t).strip().lower()
+
+
+def _pick_album(candidates, hint="", artist=""):
+    """The album of this track. When the album is known (the YouTube video says it, or the playlist is the album),
+    the edition with that name wins; otherwise the original album (not a compilation), the oldest one."""
+    if hint:
+        h = _album_title(hint)
+        for t in candidates[:5]:
+            if _sim(_album_title(t["album"].get("title")), h) > 0.85:
+                alb = deezer_album(t["album"]["id"])
+                if alb:
+                    return t, alb
+        # the right edition isn't among the top matches: look for the album itself, then for the track on it
+        main = (candidates[0].get("artist") or {}).get("name") or artist
+        for a in (_get("https://api.deezer.com/search/album", q=f'artist:"{main}" album:"{_album_title(hint)}"', limit=5) or {}).get("data") or []:
+            if _sim(_album_title(a.get("title")), h) <= 0.85:
+                continue
+            alb = deezer_album(a["id"]) or {}
+            for tr in (alb.get("tracks") or {}).get("data") or []:
+                if any(_sim(tr.get("title", ""), c["title"]) > 0.85 for c in candidates[:5]):
+                    tr = dict(tr, album={"id": a["id"], "title": a.get("title"), "cover_xl": a.get("cover_xl"),
+                                         "cover_big": a.get("cover_big")})
+                    tr.setdefault("artist", candidates[0].get("artist"))
+                    return tr, alb
     best = None
     for t in candidates[:3]:
         alb = deezer_album(t["album"]["id"])
@@ -716,6 +742,92 @@ def _media_count(media):
 
 
 @lru_cache(maxsize=512)
+def _mb_releases(rgid):
+    """Every edition (release) of a MusicBrainz release group, with formats and labels."""
+    return tuple((_mb("release", **{"release-group": rgid}, inc="media+labels", limit=100) or {}).get("releases") or [])
+
+
+@lru_cache(maxsize=512)
+def _discogs_versions(rgid):
+    """Every version of the album on Discogs (through the master release MusicBrainz links to)."""
+    for rel in _mb_release_group_full(rgid).get("relations") or []:
+        m = re.search(r"discogs\.com/master/(\d+)", (rel.get("url") or {}).get("resource") or "")
+        if m:
+            return tuple((_get(f"https://api.discogs.com/masters/{m.group(1)}/versions", per_page=100) or {}).get("versions") or [])
+    return ()
+
+
+# Distributors and "no label" mentions: they often show up where the label should be, but aren't labels
+DISTRIBUTORS = re.compile(
+    r"\b(distrokid|tunecore|cd ?baby|believe( digital| sas)?|the orchard|orchard enterprises|ingrooves|awal|amuse|spinnup|"
+    r"onerpm|routenote|ditto( music)?|symphonic|fuga|label ?worx|record ?union|soundrop|emubands|unitedmasters|"
+    r"horus music|zimbalam|imusician|rebeat|recordjet|feiyr|self[- ]?released|independent|not on label|no label)\b", re.I)
+LABEL_WORDS = re.compile(r"\b(records?|recordings?|music|musique|label|entertainment|productions?|group)\b", re.I)
+
+
+def _label_key(name):
+    return re.sub(r"\s+", " ", LABEL_WORDS.sub(" ", name.lower())).strip() or name.lower()
+
+
+def resolve_label(votes):
+    """Picks the album's label from several sources. votes: [(label as written, source, weight)].
+    Names that are the same label ("Frozen Records" / "Frozen Records Ltd" / "(P) 2021 Frozen Records") add up;
+    distributors (DistroKid, Believe…) count little. -> label, confidence, sources, alternatives."""
+    groups = []
+    for raw, source, weight in votes:
+        name = _label_name(raw or "")
+        if not name or name.startswith("["):
+            continue
+        if DISTRIBUTORS.search(name):
+            weight *= 0.2
+        key = _label_key(name)
+        same = lambda k: k == key or _sim(k, key) > 0.88 or k.startswith(key + " ") or key.startswith(k + " ")  # "Parlophone UK"
+        g = next((g for g in groups if same(g["key"])), None)
+        if not g:
+            g = {"key": key, "names": {}, "sources": {}}
+            groups.append(g)
+        g["names"][name] = g["names"].get(name, 0) + weight
+        g["sources"][source] = max(g["sources"].get(source, 0), weight)  # one vote per source
+    if not groups:
+        return {"label": None, "label_confidence": None, "label_sources": [], "label_alternatives": []}
+    for g in groups:
+        g["score"] = sum(g["sources"].values())
+        g["name"] = max(g["names"], key=g["names"].get)
+    groups.sort(key=lambda g: -g["score"])
+    best, others = groups[0], groups[1:]
+    families = {s.split(" (")[0] for s in best["sources"]}
+    rival = others[0]["score"] if others else 0
+    if len(families) >= 2 and rival < best["score"] * 0.6:
+        level = "high"
+    elif rival >= best["score"] * 0.6:
+        level = "low"
+    else:
+        level = "medium"
+    return {"label": best["name"], "label_confidence": level, "label_score": round(best["score"], 2), "label_sources": sorted(best["sources"]),
+            "label_alternatives": [f"{g['name']} ({', '.join(sorted(g['sources']))})" for g in others[:4]]}
+
+
+def album_label(deezer_label, yt, rgid):
+    """The album's label, cross-checked between YouTube's description, Deezer, MusicBrainz and Discogs."""
+    votes = []
+    if yt.get("p_line"):
+        votes.append((yt["p_line"], "YouTube (℗ line)", 3))
+    if yt.get("provided_by"):
+        votes.append((yt["provided_by"], "YouTube (provided by)", 1.5))
+    if deezer_label:
+        votes.append((deezer_label, "Deezer", 2))
+    if rgid:
+        for source, names, weight in (
+                ("MusicBrainz", [next(((li.get("label") or {}).get("name") for li in r.get("label-info") or []
+                                       if li.get("label")), None) for r in _mb_releases(rgid)], 2),
+                ("Discogs", [v.get("label") for v in _discogs_versions(rgid)], 1.5)):
+            names = [n for n in names if n]
+            for n in dict.fromkeys(names):  # each label weighs by its share of the editions
+                votes.append((n, source, weight * names.count(n) / len(names)))
+    return resolve_label(votes)
+
+
+@lru_cache(maxsize=512)
 def album_formats(rgid):
     """Every format the album was released in (vinyl, CD, cassette, digital…), from its MusicBrainz editions and
     its Discogs versions, with the list of editions for each format."""
@@ -728,8 +840,7 @@ def album_formats(rgid):
         f["editions"].setdefault(source, []).append(edition)
         f["sources"].add(source)
 
-    rels = (_mb("release", **{"release-group": rgid}, inc="media+labels", limit=100) or {}).get("releases") or []
-    for r in rels:
+    for r in _mb_releases(rgid):
         media = [m.get("format") for m in r.get("media") or [] if m.get("format")]
         label = next(((li.get("label") or {}).get("name") for li in r.get("label-info") or [] if li.get("label")), None)
         country = {"XW": "Worldwide", "XE": "Europe", "XU": None}.get(r.get("country"), r.get("country"))
@@ -740,14 +851,7 @@ def album_formats(rgid):
         for fam, ms in by_fam.items():
             add(fam, " · ".join(bits + [_media_count(ms)]), "MusicBrainz")
 
-    master = None
-    for rel in _mb_release_group_full(rgid).get("relations") or []:
-        m = re.search(r"discogs\.com/master/(\d+)", (rel.get("url") or {}).get("resource") or "")
-        if m:
-            master = m.group(1)
-    if master:
-        vers = (_get(f"https://api.discogs.com/masters/{master}/versions", per_page=100) or {}).get("versions") or []
-        for v in vers:
+    for v in _discogs_versions(rgid):
             bits = [x for x in (str(v.get("released") or "")[:4], v.get("country"), v.get("label")) if x]
             for major in dict.fromkeys(v.get("major_formats") or [v.get("format", "").split(",")[0]]):
                 if major in ("Box Set", "All Media"):
@@ -774,28 +878,53 @@ class _SilentLogger:
     warning = info = error = debug
 
 
+def _yt_music_meta(info):
+    """Music facts YouTube gives for official audio ("Artist - Topic" videos): album, the "Provided to YouTube by"
+    distributor or label, and the "℗ 2019 Label" copyright line."""
+    if not info:
+        return {}
+    desc = info.get("description") or ""
+    prov = re.search(r"Provided to YouTube by\s+(.+)", desc)
+    pline = re.search(r"(?:℗|\(P\))\s*(?:\d{4}\s+)?(.+)", desc)
+    return {"album": info.get("album"), "provided_by": prov.group(1).strip() if prov else None,
+            "p_line": pline.group(1).strip() if pline else None}
+
+
 @lru_cache(maxsize=512)
-def youtube_audio_features(url):
-    """BPM and key from the whole song: downloads the YouTube audio (no conversion) and analyses it."""
+def youtube_video(url):
+    """Downloads the YouTube audio (no conversion) and analyses it (BPM and key from the whole song); also returns
+    the video's music facts. -> (analysis or None, facts)"""
     if not url:
-        return None
+        return None, {}
     import yt_dlp
+    base = {"quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True, "logger": _SilentLogger()}
+    info = None
     with tempfile.TemporaryDirectory() as tmp:
-        opts = {
+        opts = dict(base, **{
             "format": "bestaudio[filesize<40M]/bestaudio[filesize_approx<40M]/bestaudio/best[height<=480]/best",
             "outtmpl": os.path.join(tmp, "audio.%(ext)s"),
-            "quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True, "logger": _SilentLogger(),
             "match_filter": yt_dlp.utils.match_filter_func("duration <? 900"),  # skip mixes over 15 min
-        }
+        })
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
+                info = ydl.extract_info(url, download=True)
             files = [os.path.join(tmp, f) for f in os.listdir(tmp)]
-            if not files:
-                return None
-            return analyse_samples(audio_analysis.decode_file(files[0]))
+            if files:
+                return analyse_samples(audio_analysis.decode_file(files[0])), _yt_music_meta(info)
         except Exception:
-            return None
+            pass
+    if info is None:  # the audio couldn't be fetched: still read the video's description
+        try:
+            with yt_dlp.YoutubeDL(dict(base, skip_download=True, ignore_no_formats_error=True)) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except Exception:
+            info = None
+    return None, _yt_music_meta(info)
+
+
+def youtube_audio_features(url):
+    """BPM and key from the whole song (YouTube audio)."""
+    return youtube_video(url)[0]
 
 
 def deezer_preview_features(track_id):
@@ -926,14 +1055,15 @@ def track_audio_features(track_id=None, video_url="", artist="", title=""):
     return combine_audio(analysed, source, deezer_bpm, gsb)
 
 
-def enrich(title, channel="", video_url=""):
+def enrich(title, channel="", video_url="", playlist=""):
     artist_guess, track_guess, artist_reliable = parse_title_ex(title, channel)
+    _, yt = youtube_video(video_url)  # also fetches the audio analysed below (cached)
     candidates = _search_deezer(artist_guess, track_guess, artist_reliable)
     if not candidates:
         return {"found": False, "guess": {"artist": artist_guess, "track": track_guess},
                 **track_audio_features(None, video_url, artist_guess, track_guess)}
 
-    track, album = _pick_album(candidates)
+    track, album = _pick_album(candidates, yt.get("album") or playlist, artist_guess)
     full_track = deezer_track(track["id"])
 
     artists = []
@@ -947,7 +1077,9 @@ def enrich(title, channel="", video_url=""):
     genres = {}
     _add_genres(genres, mb_release_group_genres(main, track["title"], alb_info.get("title")), "MusicBrainz (album)")
     rgid, rg_sim = mb_release_group(main, track["title"], alb_info.get("title"))
-    formats = album_formats(rgid) if rgid and rg_sim > 0.8 else []
+    rgid = rgid if rg_sim > 0.8 else None
+    formats = album_formats(rgid) if rgid else []
+    label = album_label(album.get("label"), yt, rgid)
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
     _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (track)")
     album_genres = [{"name": g["name"], "sources": g["sources"]}
@@ -968,7 +1100,7 @@ def enrich(title, channel="", video_url=""):
         "record_type": album.get("record_type"),
         "cover": alb_info.get("cover_xl") or alb_info.get("cover_big"),
         "release_date": album.get("release_date") or full_track.get("release_date"),
-        "label": album.get("label"),
+        **label,
         "genres": genre_list,
         "artists": artist_details,
         "deezer_url": track.get("link"),
