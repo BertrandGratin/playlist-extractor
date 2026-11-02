@@ -650,8 +650,8 @@ def label_info(raw_name):
 
 
 @lru_cache(maxsize=2048)
-def mb_release_group_genres(artist, track, album_title):
-    """MusicBrainz genres of the album (release group) containing this track."""
+def mb_release_group(artist, track, album_title):
+    """MusicBrainz release group (album) containing this track: (id, title similarity), or (None, 0)."""
     recs = (_mb("recording/", query=f'recording:"{track}" AND artist:"{artist}"', limit=10) or {}).get("recordings") or []
     best = None
     for r in recs:
@@ -659,12 +659,108 @@ def mb_release_group_genres(artist, track, album_title):
             rg = rel.get("release-group") or {}
             if not rg.get("id"):
                 continue
-            score = _sim(rel.get("title", ""), album_title or "") + (0.5 if not rg.get("secondary-types") else 0)
+            sim = _sim(rel.get("title", ""), album_title or "")
+            score = sim + (0.5 if not rg.get("secondary-types") else 0)
             if best is None or score > best[0]:
-                best = (score, rg["id"])
-    if not best:
-        return []
-    return _mb_genres(_mb(f"release-group/{best[1]}", inc="genres"))
+                best = (score, rg["id"], sim)
+    return (best[1], best[2]) if best else (None, 0)
+
+
+@lru_cache(maxsize=1024)
+def _mb_release_group_full(rgid):
+    return _mb(f"release-group/{rgid}", inc="genres+url-rels") or {}
+
+
+def mb_release_group_genres(artist, track, album_title):
+    """MusicBrainz genres of the album (release group) containing this track."""
+    rgid, _ = mb_release_group(artist, track, album_title)
+    return _mb_genres(_mb_release_group_full(rgid)) if rgid else []
+
+
+FORMAT_ORDER = ["Vinyl", "CD", "Cassette", "Digital", "SACD", "MiniDisc", "DVD", "Blu-ray", "8-Track", "Reel-to-reel"]
+
+
+def _format_family(name):
+    """MusicBrainz or Discogs format -> the family shown ("12\" Vinyl" -> Vinyl, "Enhanced CD" -> CD, "File" -> Digital)."""
+    n = (name or "").strip()
+    low = n.lower()
+    if "vinyl" in low or low in ("lp", "flexi-disc", "lathe cut", "acetate", "shellac"):
+        return "Vinyl"
+    if "sacd" in low:
+        return "SACD"
+    if low in ("digital media", "file", "download card") or "digital" in low:
+        return "Digital"
+    if "cassette" in low:
+        return "Cassette"
+    if "minidisc" in low:
+        return "MiniDisc"
+    if "blu-ray" in low:
+        return "Blu-ray"
+    if "dvd" in low:
+        return "DVD"
+    if "8-track" in low:
+        return "8-Track"
+    if "reel" in low:
+        return "Reel-to-reel"
+    if "cd" in low or low == "dualdisc":
+        return "CD"
+    return n or None
+
+
+def _media_count(media):
+    """["12\" Vinyl", "12\" Vinyl"] -> '2×12" Vinyl'."""
+    counts = {}
+    for f in media:
+        counts[f] = counts.get(f, 0) + 1
+    return " + ".join(f"{n}×{f}" if n > 1 else f for f, n in counts.items())
+
+
+@lru_cache(maxsize=512)
+def album_formats(rgid):
+    """Every format the album was released in (vinyl, CD, cassette, digital…), from its MusicBrainz editions and
+    its Discogs versions, with the list of editions for each format."""
+    fams = {}
+
+    def add(fam, edition, source):
+        if not fam:
+            return
+        f = fams.setdefault(fam, {"name": fam, "editions": {}, "sources": set()})
+        f["editions"].setdefault(source, []).append(edition)
+        f["sources"].add(source)
+
+    rels = (_mb("release", **{"release-group": rgid}, inc="media+labels", limit=100) or {}).get("releases") or []
+    for r in rels:
+        media = [m.get("format") for m in r.get("media") or [] if m.get("format")]
+        label = next(((li.get("label") or {}).get("name") for li in r.get("label-info") or [] if li.get("label")), None)
+        country = {"XW": "Worldwide", "XE": "Europe", "XU": None}.get(r.get("country"), r.get("country"))
+        bits = [x for x in ((r.get("date") or "")[:4], country, label) if x and x != "[no label]"]
+        by_fam = {}
+        for m in media:
+            by_fam.setdefault(_format_family(m), []).append(m)
+        for fam, ms in by_fam.items():
+            add(fam, " · ".join(bits + [_media_count(ms)]), "MusicBrainz")
+
+    master = None
+    for rel in _mb_release_group_full(rgid).get("relations") or []:
+        m = re.search(r"discogs\.com/master/(\d+)", (rel.get("url") or {}).get("resource") or "")
+        if m:
+            master = m.group(1)
+    if master:
+        vers = (_get(f"https://api.discogs.com/masters/{master}/versions", per_page=100) or {}).get("versions") or []
+        for v in vers:
+            bits = [x for x in (str(v.get("released") or "")[:4], v.get("country"), v.get("label")) if x]
+            for major in dict.fromkeys(v.get("major_formats") or [v.get("format", "").split(",")[0]]):
+                if major in ("Box Set", "All Media"):
+                    continue
+                add(_format_family(major), " · ".join(bits + [v.get("format") or major]), "Discogs")
+
+    out = []
+    for f in fams.values():
+        # the source that knows the most editions of this format gives the list
+        eds = max(f["editions"].values(), key=len)
+        out.append({"name": f["name"], "count": len(eds), "editions": sorted(eds)[:20], "sources": sorted(f["sources"])})
+    out.sort(key=lambda f: (FORMAT_ORDER.index(f["name"]) if f["name"] in FORMAT_ORDER else 99, -f["count"]))
+    return out
 
 
 @lru_cache(maxsize=2048)
@@ -850,6 +946,8 @@ def enrich(title, channel="", video_url=""):
     main = artists[0]["name"]
     genres = {}
     _add_genres(genres, mb_release_group_genres(main, track["title"], alb_info.get("title")), "MusicBrainz (album)")
+    rgid, rg_sim = mb_release_group(main, track["title"], alb_info.get("title"))
+    formats = album_formats(rgid) if rgid and rg_sim > 0.8 else []
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
     _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (track)")
     album_genres = [{"name": g["name"], "sources": g["sources"]}
@@ -874,6 +972,7 @@ def enrich(title, channel="", video_url=""):
         "genres": genre_list,
         "artists": artist_details,
         "deezer_url": track.get("link"),
+        "album_formats": formats,
         "bandcamp_url": bandcamp_album((album.get("artist") or {}).get("name") or main, alb_info.get("title") or ""),
         **track_audio_features(track["id"], video_url, main, track.get("title") or track_guess),
     }

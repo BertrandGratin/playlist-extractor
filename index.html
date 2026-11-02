@@ -168,6 +168,16 @@
   .alb-sub { font-size: 12.5px; color: var(--muted); line-height: 1.55; }
   .alb .chips { margin-top: 4px; }
   .alb .chip { font-size: 11.5px; padding: 1px 7px; }
+  .fmt { cursor: help; }
+  .fmt b { font-weight: 600; color: var(--muted); margin-left: 3px; }
+  .alb .fmts { margin-top: 4px; }
+  .tip .eds { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: #cfcfcf; }
+  /* Header summary: the main facts on one or two lines, each copyable */
+  .pl-sum { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 6px; font-size: 13.5px; align-items: center; }
+  .pl-sum:empty { display: none; }
+  .pl-sum .it { display: inline-flex; align-items: center; gap: 4px; }
+  .pl-sum .k { font-family: var(--serif); font-weight: 700; font-size: 12px; color: var(--muted); }
+  .pl-sum .chip { font-size: 12px; padding: 0 7px; }
 
   /* Tracks: a table, like zigzag's island view */
   .tbl { width: 100%; }
@@ -362,7 +372,9 @@
       <div class="pl-imgs" id="plImgs"></div>
       <div>
         <div class="pl-head"><p class="pl-title" id="plTitle"></p><div class="count" id="count"></div></div>
+        <div class="pl-sum" id="plSum"></div>
         <div class="actions">
+          <button class="ghost" id="copySummary" title="Copy the summary: album, artist, label, date, formats, genres and tracklist">Copy summary</button>
           <button class="ghost" id="copyTitles">Copy all titles</button>
           <button class="ghost" id="copyLinks">Copy all links</button>
           <button class="ghost" id="csv">Export all (.csv)</button>
@@ -579,7 +591,7 @@ function renderAudio(e, cell) {
 const tipBox = document.createElement("div");
 tipBox.className = "tipbox"; document.body.appendChild(tipBox);
 function showTip(el, html = el.dataset.tip) {
-  tipBox.innerHTML = html; tipBox.classList.add("on"); tipBox.classList.toggle("wide", el.classList.contains("label-link"));
+  tipBox.innerHTML = html; tipBox.classList.add("on"); tipBox.classList.toggle("wide", el.classList.contains("label-link") || el.classList.contains("fmt"));
   const r = el.getBoundingClientRect(), w = tipBox.offsetWidth, h = tipBox.offsetHeight;
   const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
   const top = r.top - h - 8 >= 8 ? r.top - h - 8 : r.bottom + 8;
@@ -587,11 +599,11 @@ function showTip(el, html = el.dataset.tip) {
 }
 const hideTip = () => tipBox.classList.remove("on");
 document.addEventListener("mouseover", ev => {
-  const el = ev.target.closest?.(".conf"), lab = ev.target.closest?.(".label-link");
+  const el = ev.target.closest?.(".conf, .tipd"), lab = ev.target.closest?.(".label-link");
   el ? showTip(el) : lab ? showLabelTip(lab) : hideTip();
 });
-document.addEventListener("focusin", ev => { const el = ev.target.closest?.(".conf"); if (el) showTip(el); });
-document.addEventListener("click", ev => { const el = ev.target.closest?.(".conf"); el ? showTip(el) : hideTip(); });
+document.addEventListener("focusin", ev => { const el = ev.target.closest?.(".conf, .tipd"); if (el) showTip(el); });
+document.addEventListener("click", ev => { const el = ev.target.closest?.(".conf, .tipd"); el ? showTip(el) : hideTip(); });
 addEventListener("scroll", hideTip, { passive: true, capture: true });
 function renderTrackInfo(i) {
   const e = data.videos[i].meta, row = $("row" + i), cell = c => row.querySelector(".c-" + c);
@@ -723,6 +735,72 @@ function showLabelTip(el) {
 
 /* ---------- Albums (one card per album) ---------- */
 const albumKey = e => slug("b" + (e.album_id || `${e.album_artist}|${e.album}`));
+/* Release formats (vinyl, CD, cassette…): a chip each, its editions listed on hover */
+function fmtChips(formats) {
+  return formats.map(f => `<span class="chip fmt tipd" tabindex="0" data-tip="${esc(`<b>${esc(f.name)}</b>: ${plural(f.count, "edition")} (${esc(f.sources.join(", "))})
+    <ul class="eds">${f.editions.map(x => `<li>${esc(x)}</li>`).join("")}${f.count > f.editions.length ? `<li>…</li>` : ""}</ul>`)}">${esc(f.name)}${f.count > 1 ? `<b>×${f.count}</b>` : ""}</span>`).join("");
+}
+
+/* ---------- Header summary ---------- */
+/* The playlist's album when most found tracks come from one album (or the playlist is named after it). */
+function mainAlbum() {
+  const counts = new Map();
+  data.videos.forEach(v => { if (v.meta?.found && v.meta.album) counts.set(albumKey(v.meta), (counts.get(albumKey(v.meta)) || 0) + 1); });
+  const [key, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+  const alb = key && albums.get(key);
+  if (!alb) return null;
+  const t = s => (s || "").toLowerCase().replace(/^album\s*[-–:]\s*/, "").trim();
+  const found = data.videos.filter(v => v.meta?.found).length;
+  return t(data.title).includes(t(alb.title)) || n / Math.max(found, 1) >= 0.6 ? alb : null;
+}
+/* Names sorted by how many tracks they appear on */
+function ranked(values) {
+  const c = new Map();
+  values.filter(Boolean).forEach(x => c.set(x, (c.get(x) || 0) + 1));
+  return [...c.entries()].sort((a, b) => b[1] - a[1]).map(([x]) => x);
+}
+function summary() {
+  const found = data.videos.map(v => v.meta).filter(e => e?.found);
+  if (!found.length) return null;
+  const alb = mainAlbum();
+  if (alb) return { key: alb.key, album: alb.title, artists: [alb.artist], labels: alb.label ? [alb.label] : [], date: alb.date && fmtDate(alb.date),
+                    type: alb.type, formats: alb.formats || [], genres: alb.genres.map(g => g.name).slice(0, 5) };
+  const years = found.map(e => (e.release_date || "").slice(0, 4)).filter(y => y && y !== "0000").sort();
+  return { artists: ranked(found.flatMap(e => e.artists.map(a => a.name))), labels: ranked(found.map(e => e.label)),
+           date: years.length ? (years[0] === years.at(-1) ? years[0] : `${years[0]}–${years.at(-1)}`) : "", formats: [],
+           genres: ranked(found.flatMap(e => (e.genres || []).slice(0, 3).map(g => g.name))).slice(0, 5) };
+}
+function drawSummary() {
+  const s = summary();
+  if (!s) { $("plSum").innerHTML = ""; return; }
+  const more = (list, n) => list.length > n ? ` <span class="k">+${list.length - n}</span>` : "";
+  const item = (k, v, copyText = v) => v ? `<span class="it"><span class="k">${k}</span> ${v}${copyText ? copyBtn(copyText, k.toLowerCase()) : ""}</span>` : "";
+  const ar = s.artists.slice(0, 3), lb = s.labels.slice(0, 3);
+  $("plSum").innerHTML = [
+    s.album && item("Album", esc(s.album), s.album),
+    item(ar.length > 1 ? "Artists" : "Artist", ar.length && esc(ar.join(", ")) + more(s.artists, 3), ar.join(", ")),
+    item(lb.length > 1 ? "Labels" : "Label", lb.length && esc(lb.join(", ")) + more(s.labels, 3), lb.join(", ")),
+    item(s.album ? "Released" : "Years", s.date && esc(s.date), s.date),
+    s.formats.length && `<span class="it"><span class="k">Formats</span> ${fmtChips(s.formats)}${copyBtn(s.formats.map(f => f.name).join(", "), "formats")}</span>`,
+  ].filter(Boolean).join("");
+}
+/* Plain-text summary for "Copy summary" */
+function summaryText() {
+  const s = summary() || { artists: [], labels: [], formats: [], genres: [] };
+  const lines = [s.album ? `${s.album} (${s.artists.join(", ")})` : data.title];
+  if (!s.album && s.artists.length) lines.push(`Artists: ${s.artists.join(", ")}`);
+  if (s.labels.length) lines.push(`${s.labels.length > 1 ? "Labels" : "Label"}: ${s.labels.join(", ")}`);
+  if (s.date) lines.push(`${s.album ? "Released" : "Years"}: ${s.date}`);
+  if (s.formats.length) lines.push(`Formats: ${s.formats.map(f => f.name).join(", ")}`);
+  if (s.genres.length) lines.push(`Genres: ${s.genres.join(", ")}`);
+  lines.push(`Playlist: ${data.title}${data.url ? ` (${data.url})` : ""}`, "", `Tracks (${data.videos.length}):`);
+  data.videos.forEach((v, i) => {
+    const e = v.meta || {}, extra = s.album && e.found && albumKey(e) === s.key ? "" : (e.artists || []).map(a => a.name).join(", ");
+    lines.push(`${i + 1}. ${v.name || v.title}${extra ? ` - ${extra}` : ""}`);
+  });
+  return lines.join("\n");
+}
+
 function addAlbum(e, trackIdx) {
   if (!e.album) return;
   const key = albumKey(e);
@@ -737,6 +815,7 @@ function addAlbum(e, trackIdx) {
     $("nAlbums").textContent = albums.size;
   }
   entry.bandcamp = entry.bandcamp || e.bandcamp_url;
+  if (!entry.formats?.length) entry.formats = e.album_formats || [];
   if (entry.label) addLabel(entry.label, key);
   maybeAlbumCover(!(data.thumbnails || []).length);
   entry.tracks.add(trackIdx);
@@ -755,6 +834,7 @@ function addAlbum(e, trackIdx) {
       ${entry.label ? `<button class="label-link jump" data-jump="${labelKey(entry.label)}" data-label="${labelKey(entry.label)}">${esc(entry.label)}</button><br>` : ""}
       ${entry.bandcamp ? `<a class="alb-link" href="${esc(entry.bandcamp)}" target="_blank" rel="noopener">Bandcamp ↗</a>` : ""}
     </div>
+    ${entry.formats.length ? `<div class="chips fmts">${fmtChips(entry.formats)}</div>` : ""}
     ${entry.genres.length ? `<div class="chips">${entry.genres.map(g =>
       `<span class="chip" title="Source: ${esc(g.sources.join(", "))}">${esc(g.name)}</span>`).join("")}</div>` : ""}`;
 }
@@ -782,6 +862,7 @@ async function enrichAll(id) {
         addAlbum(v.meta, i);
       }
       renderTrackInfo(i);
+      drawSummary();
       done++; progress();
     }
   }
@@ -810,6 +891,7 @@ $("results").addEventListener("click", e => {
   }
 });
 
+$("copySummary").onclick = () => data && copy(summaryText());
 $("copyTitles").onclick = () => data && copy(data.videos.map(v => v.name || v.title).join("\n"));
 $("copyLinks").onclick = () => data && copy(data.videos.map(v => v.url).join("\n"));
 
@@ -821,12 +903,12 @@ function save(text, name, type) {
 $("csv").onclick = () => {
   if (!data) return;
   const q = x => `"${String(x ?? "").replace(/"/g, '""')}"`;
-  const head = ["Title", "YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Genres", "BPM", "BPM confidence", "Key", "Camelot", "Key confidence", "Cover", "Artist photos"];
+  const head = ["Title", "YouTube title", "Link", "Artists", "Country", "Track", "Album", "Release date", "Label", "Formats", "Genres", "BPM", "BPM confidence", "Key", "Camelot", "Key confidence", "Cover", "Artist photos"];
   const rows = data.videos.map(v => {
     const e = v.meta || {};
     const ar = e.artists || [];
     return [v.name || v.title, v.title, v.url, ar.map(a => a.name).join(", "), ar.map(a => countryName(a, false)).join(", "), e.track, e.album,
-            e.release_date, e.label, (e.genres || []).map(g => g.name).join(", "), e.bpm, e.bpm_confidence, e.key, e.camelot, e.key_confidence, e.cover,
+            e.release_date, e.label, (e.album_formats || []).map(f => f.name).join(", "), (e.genres || []).map(g => g.name).join(", "), e.bpm, e.bpm_confidence, e.key, e.camelot, e.key_confidence, e.cover,
             ar.flatMap(a => (a.images || []).map(i => i.url)).join(" ")].map(q).join(";");
   });
   save("﻿" + [head.map(q).join(";"), ...rows].join("\r\n"), fileSafe(data.title || "playlist") + ".csv", "text/csv;charset=utf-8");
@@ -848,7 +930,8 @@ $("form").onsubmit = async e => {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || "Unknown error");
-    data = j; artists = new Map(); albums = new Map(); labels = new Map();
+    data = j; data.url = $("url").value.trim(); artists = new Map(); albums = new Map(); labels = new Map();
+    $("plSum").innerHTML = "";
     $("artists").innerHTML = $("albums").innerHTML = $("labels").innerHTML = `<div class="empty">Searching…</div>`;
     $("nArtists").textContent = $("nAlbums").textContent = $("nLabels").textContent = "0";
     renderPlaylist(); renderTracks();
