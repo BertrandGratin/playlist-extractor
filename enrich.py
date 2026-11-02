@@ -27,10 +27,12 @@ import audio_analysis
 from audio_analysis import NOTES, analyse, analyse_samples, camelot
 
 try:
-    from _secrets import GETSONGBPM_API_KEY
+    import _secrets
 except ImportError:
-    GETSONGBPM_API_KEY = ""
-GETSONGBPM_API_KEY = os.environ.get("GETSONGBPM_API_KEY", GETSONGBPM_API_KEY)
+    _secrets = None
+GETSONGBPM_API_KEY = os.environ.get("GETSONGBPM_API_KEY", getattr(_secrets, "GETSONGBPM_API_KEY", ""))
+# Discogs personal access token: unlocks Discogs search (the public API only gives pages whose id is known)
+DISCOGS_TOKEN = os.environ.get("DISCOGS_TOKEN", getattr(_secrets, "DISCOGS_TOKEN", ""))
 
 UA = "PlaylistExtractor/1.0 (projet perso local)"
 session = requests.Session()
@@ -336,7 +338,7 @@ def _discogs_text(text):
 @lru_cache(maxsize=1024)
 def discogs(kind, did):
     """Discogs artist or label ("artists"/"labels", id): profile text, images, page (public API, no key)."""
-    d = _get(f"https://api.discogs.com/{kind}/{did}") or {}
+    d = _discogs_get(f"{kind}/{did}") or {}
     if not d:
         return None
     return {
@@ -777,14 +779,40 @@ def _mb_releases(rgid):
     return tuple((_mb("release", **{"release-group": rgid}, inc="media+labels", limit=100) or {}).get("releases") or [])
 
 
+def _discogs_get(path, **params):
+    """Discogs API, with the token when there is one (needed for search; also a higher rate limit)."""
+    try:
+        r = session.get(f"https://api.discogs.com/{path}", params=params or None, timeout=TIMEOUT,
+                        headers={"Authorization": f"Discogs token={DISCOGS_TOKEN}"} if DISCOGS_TOKEN else None)
+        if r.ok:
+            return r.json()
+    except (requests.RequestException, ValueError):
+        pass
+    return None
+
+
 @lru_cache(maxsize=512)
-def _discogs_versions(rgid):
-    """Every version of the album on Discogs (through the master release MusicBrainz links to)."""
-    for rel in _mb_release_group_full(rgid).get("relations") or []:
+def _discogs_versions(rgid, artist="", title=""):
+    """Every version of the album on Discogs: through the master release MusicBrainz links to, else (with a
+    token) found by searching Discogs for the artist and album."""
+    for rel in (_mb_release_group_full(rgid).get("relations") or []) if rgid else []:
         m = re.search(r"discogs\.com/master/(\d+)", (rel.get("url") or {}).get("resource") or "")
         if m:
-            return tuple((_get(f"https://api.discogs.com/masters/{m.group(1)}/versions", per_page=100) or {}).get("versions") or [])
-    return ()
+            return tuple((_discogs_get(f"masters/{m.group(1)}/versions", per_page=100) or {}).get("versions") or [])
+    if not (DISCOGS_TOKEN and artist and title):
+        return ()
+    t = _album_title(title)
+    same = lambda r: _sim(_album_title(r.get("title", "").split(" - ", 1)[-1]), t) > 0.85 and \
+        _sim(r.get("title", "").split(" - ", 1)[0], artist) > 0.8  # Discogs titles read "Artist - Album"
+    masters = (_discogs_get("database/search", type="master", artist=artist, release_title=title, per_page=10) or {}).get("results") or []
+    master = next((r for r in masters if same(r)), None)
+    if master:
+        return tuple((_discogs_get(f"masters/{master['id']}/versions", per_page=100) or {}).get("versions") or [])
+    # no master (often for small releases): each release found is a version
+    rels = (_discogs_get("database/search", type="release", artist=artist, release_title=title, per_page=50) or {}).get("results") or []
+    return tuple({"format": ", ".join(r.get("format") or []), "major_formats": (r.get("format") or [])[:1],
+                  "released": r.get("year"), "country": r.get("country"), "label": (r.get("label") or [None])[0]}
+                 for r in rels if same(r))
 
 
 # Distributors and "no label" mentions: they often show up where the label should be, but aren't labels
@@ -837,7 +865,7 @@ def resolve_label(votes):
             "label_alternatives": [f"{g['name']} ({', '.join(sorted(g['sources']))})" for g in others[:4]]}
 
 
-def album_label(deezer_label, yt, rgid):
+def album_label(deezer_label, yt, rgid, artist="", title=""):
     """The album's label, cross-checked between YouTube's description, Deezer, MusicBrainz and Discogs."""
     votes = []
     if yt.get("p_line"):
@@ -846,19 +874,19 @@ def album_label(deezer_label, yt, rgid):
         votes.append((yt["provided_by"], "YouTube (provided by)", 1.5))
     if deezer_label:
         votes.append((deezer_label, "Deezer", 2))
-    if rgid:
-        for source, names, weight in (
-                ("MusicBrainz", [next(((li.get("label") or {}).get("name") for li in r.get("label-info") or []
-                                       if li.get("label")), None) for r in _mb_releases(rgid)], 2),
-                ("Discogs", [v.get("label") for v in _discogs_versions(rgid)], 1.5)):
-            names = [n for n in names if n]
+    for source, names, weight in (
+            ("MusicBrainz", [next(((li.get("label") or {}).get("name") for li in r.get("label-info") or []
+                                   if li.get("label")), None) for r in (_mb_releases(rgid) if rgid else ())], 2),
+            ("Discogs", [v.get("label") for v in _discogs_versions(rgid, artist, title)], 1.5)):
+        names = [n for n in names if n]
+        if names:
             for n in dict.fromkeys(names):  # each label weighs by its share of the editions
                 votes.append((n, source, weight * names.count(n) / len(names)))
     return resolve_label(votes)
 
 
 @lru_cache(maxsize=512)
-def album_formats(rgid, bandcamp_url=None, deezer_date=None):
+def album_formats(rgid, bandcamp_url=None, deezer_date=None, artist="", title=""):
     """Every format the album was released in (vinyl, CD, cassette, digital…), from its MusicBrainz editions, its
     Discogs versions, the physical editions sold on its Bandcamp page and Deezer (digital), with the list of
     editions for each format."""
@@ -882,7 +910,7 @@ def album_formats(rgid, bandcamp_url=None, deezer_date=None):
         for fam, ms in by_fam.items():
             add(fam, " · ".join(bits + [_media_count(ms)]), "MusicBrainz")
 
-    for v in _discogs_versions(rgid) if rgid else ():
+    for v in _discogs_versions(rgid, artist, title):
         bits = [x for x in (str(v.get("released") or "")[:4], v.get("country"), v.get("label")) if x]
         for major in dict.fromkeys(v.get("major_formats") or [v.get("format", "").split(",")[0]]):
             if major in ("Box Set", "All Media"):
@@ -1116,8 +1144,10 @@ def enrich(title, channel="", video_url="", playlist=""):
     rgid, rg_sim = mb_release_group(main, track["title"], alb_info.get("title"))
     rgid = rgid if rg_sim > 0.8 else None
     bandcamp_url = bandcamp_album((album.get("artist") or {}).get("name") or main, alb_info.get("title") or "")
-    formats = album_formats(rgid, bandcamp_url, album.get("release_date") or full_track.get("release_date"))
-    label = album_label(album.get("label"), yt, rgid)
+    album_artist = (album.get("artist") or {}).get("name") or main
+    formats = album_formats(rgid, bandcamp_url, album.get("release_date") or full_track.get("release_date"),
+                            album_artist, alb_info.get("title") or "")
+    label = album_label(album.get("label"), yt, rgid, album_artist, alb_info.get("title") or "")
     _add_genres(genres, [g["name"] for g in ((album.get("genres") or {}).get("data") or [])], "Deezer")
     _add_genres(genres, audiodb_track_genres(main, track["title"]), "TheAudioDB (track)")
     album_genres = [{"name": g["name"], "sources": g["sources"]}

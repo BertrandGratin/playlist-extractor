@@ -40,9 +40,11 @@ jobs:
         shell: bash
         env:
           GETSONGBPM_API_KEY: ${{ secrets.GETSONGBPM_API_KEY }}
+          DISCOGS_TOKEN: ${{ secrets.DISCOGS_TOKEN }}
         run: |
           [ -n "$GETSONGBPM_API_KEY" ] || echo "::warning::GETSONGBPM_API_KEY secret is missing, GetSongBPM cross-check disabled"
-          python -c "import os; open('_secrets.py', 'w').write('GETSONGBPM_API_KEY = %r\n' % os.environ.get('GETSONGBPM_API_KEY', ''))"
+          [ -n "$DISCOGS_TOKEN" ] || echo "::warning::DISCOGS_TOKEN secret is missing, Discogs search disabled"
+          python -c "import os; open('_secrets.py', 'w').write(''.join('%s = %r\n' % (k, os.environ.get(k, '')) for k in ('GETSONGBPM_API_KEY', 'DISCOGS_TOKEN')))"
           echo 'VERSION = "${{ inputs.version || github.ref_name }}"' > _version.py
           SEP=":"; [ "$RUNNER_OS" = "Windows" ] && SEP=";"
           pyinstaller --onefile --name Playlist-Extractor \
